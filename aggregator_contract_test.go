@@ -108,8 +108,10 @@ func setupDistributionVariant[N Number](t *testing.T, mk measureMaker[N]) varian
 				MaxSamplesPerKey: 0,
 			})
 		},
-		flush:          func(a Aggregator[HTTPLabels, N]) { a.(*DistributionAggregator[HTTPLabels, N]).flush() },
-		storeLen:       func(a Aggregator[HTTPLabels, N]) int { return countStore(a.(*DistributionAggregator[HTTPLabels, N]).store) },
+		flush: func(a Aggregator[HTTPLabels, N]) { a.(*DistributionAggregator[HTTPLabels, N]).flush() },
+		storeLen: func(a Aggregator[HTTPLabels, N]) int {
+			return countStore(a.(*DistributionAggregator[HTTPLabels, N]).store)
+		},
 		recordedCombos: func(t *testing.T) map[HTTPLabels]bool { return combosInView(t, v.Name, schema) },
 	}
 }
@@ -132,8 +134,10 @@ func setupLastValueVariant[N Number](t *testing.T, mk measureMaker[N]) variantEn
 				Measure: m,
 			})
 		},
-		flush:          func(a Aggregator[HTTPLabels, N]) { a.(*LastValueAggregator[HTTPLabels, N]).flush() },
-		storeLen:       func(a Aggregator[HTTPLabels, N]) int { return countStore(a.(*LastValueAggregator[HTTPLabels, N]).store) },
+		flush: func(a Aggregator[HTTPLabels, N]) { a.(*LastValueAggregator[HTTPLabels, N]).flush() },
+		storeLen: func(a Aggregator[HTTPLabels, N]) int {
+			return countStore(a.(*LastValueAggregator[HTTPLabels, N]).store)
+		},
 		recordedCombos: func(t *testing.T) map[HTTPLabels]bool { return combosInView(t, v.Name, schema) },
 	}
 }
