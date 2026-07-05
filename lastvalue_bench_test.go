@@ -28,8 +28,8 @@ func setupLastValueView() {
 	})
 }
 
-func newBenchLastValueAggregator() *LastValueAggregator[HTTPLabels] {
-	return NewLastValueAggregator(LastValueConfig[HTTPLabels]{
+func newBenchLastValueAggregator() *LastValueAggregator[HTTPLabels, float64] {
+	return NewLastValueAggregator(LastValueConfig[HTTPLabels, float64]{
 		Config:  Config[HTTPLabels]{Shards: 32, Interval: time.Hour, Schema: benchSchema},
 		Measure: benchGauge,
 	})

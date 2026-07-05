@@ -76,35 +76,35 @@ func peekCountAcc(s *shardedStore[HTTPLabels, countAcc], k HTTPLabels) (countAcc
 	return *acc, true
 }
 
-func peekSumAcc(s *shardedStore[HTTPLabels, sumCountAcc], k HTTPLabels) (sumCountAcc, bool) {
+func peekSumAcc(s *shardedStore[HTTPLabels, sumCountAcc[float64]], k HTTPLabels) (sumCountAcc[float64], bool) {
 	sh := s.shardFor(k)
 	sh.mu.Lock()
 	defer sh.mu.Unlock()
 	acc, ok := sh.m[k]
 	if !ok {
-		return sumCountAcc{}, false
+		return sumCountAcc[float64]{}, false
 	}
 	return *acc, true
 }
 
-func peekLastValueAcc(s *shardedStore[HTTPLabels, lastValueAcc], k HTTPLabels) (lastValueAcc, bool) {
+func peekLastValueAcc(s *shardedStore[HTTPLabels, lastValueAcc[float64]], k HTTPLabels) (lastValueAcc[float64], bool) {
 	sh := s.shardFor(k)
 	sh.mu.Lock()
 	defer sh.mu.Unlock()
 	acc, ok := sh.m[k]
 	if !ok {
-		return lastValueAcc{}, false
+		return lastValueAcc[float64]{}, false
 	}
 	return *acc, true
 }
 
-func peekDistAcc(s *shardedStore[HTTPLabels, distAcc], k HTTPLabels) (distAcc, bool) {
+func peekDistAcc(s *shardedStore[HTTPLabels, distAcc[float64]], k HTTPLabels) (distAcc[float64], bool) {
 	sh := s.shardFor(k)
 	sh.mu.Lock()
 	defer sh.mu.Unlock()
 	acc, ok := sh.m[k]
 	if !ok {
-		return distAcc{}, false
+		return distAcc[float64]{}, false
 	}
 	return *acc, true
 }
@@ -115,7 +115,7 @@ func FuzzCountAggregator_Add(f *testing.F) {
 	f.Add("ключ", "/ünïcödé", strings.Repeat("z", 300), make([]byte, 64))
 
 	f.Fuzz(func(t *testing.T, user, route, status string, raw []byte) {
-		agg := NewCountAggregator(CountConfig[HTTPLabels]{
+		agg := NewCountAggregator(CountConfig[HTTPLabels, float64]{
 			Config:       Config[HTTPLabels]{Shards: 4, Interval: time.Hour, Schema: fuzzSchema},
 			CountMeasure: fuzzCountMeasure,
 		})
@@ -150,7 +150,7 @@ func FuzzSumAggregator_Add(f *testing.F) {
 	f.Add("u2", "/b", "500", []byte{0, 0, 0, 0, 0, 0, 0xf0, 0x7f, 0, 0, 0, 0, 0, 0, 0xf0, 0xff}) // +Inf, -Inf
 
 	f.Fuzz(func(t *testing.T, user, route, status string, raw []byte) {
-		agg := NewSumAggregator(SumConfig[HTTPLabels]{
+		agg := NewSumAggregator(SumConfig[HTTPLabels, float64]{
 			Config:     Config[HTTPLabels]{Shards: 4, Interval: time.Hour, Schema: fuzzSchema},
 			SumMeasure: fuzzSumMeasure,
 		})
@@ -188,7 +188,7 @@ func FuzzLastValueAggregator_Add(f *testing.F) {
 	f.Add("u2", "/b", "500", make([]byte, 40))
 
 	f.Fuzz(func(t *testing.T, user, route, status string, raw []byte) {
-		agg := NewLastValueAggregator(LastValueConfig[HTTPLabels]{
+		agg := NewLastValueAggregator(LastValueConfig[HTTPLabels, float64]{
 			Config:  Config[HTTPLabels]{Shards: 4, Interval: time.Hour, Schema: fuzzSchema},
 			Measure: fuzzLastMeasure,
 		})
@@ -224,7 +224,7 @@ func FuzzDistributionAggregator_Add(f *testing.F) {
 
 	f.Fuzz(func(t *testing.T, user, route, status string, maxSamplesRaw uint8, raw []byte) {
 		maxSamples := int(maxSamplesRaw % 21) // cap reservoir size to keep runs fast: 0..20
-		agg := NewDistributionAggregator(DistributionConfig[HTTPLabels]{
+		agg := NewDistributionAggregator(DistributionConfig[HTTPLabels, float64]{
 			Config:           Config[HTTPLabels]{Shards: 4, Interval: time.Hour, Schema: fuzzSchema},
 			Measure:          fuzzDistMeasure,
 			MaxSamplesPerKey: maxSamples,

@@ -6,31 +6,31 @@ import (
 
 // SumConfig configures a SumAggregator, pairing the shared Config with
 // the measures used to record the accumulated sum and count.
-type SumConfig[K comparable] struct {
+type SumConfig[K comparable, N Number] struct {
 	Config[K]
-	SumMeasure *stats.Float64Measure
+	SumMeasure Measure[N]
 }
 
-type sumCountAcc struct {
-	sum float64
+type sumCountAcc[N Number] struct {
+	sum N
 }
 
 // SumAggregator accumulates the running sum per key K across
 // sharded stores and flushes both to OpenCensus on the configured interval.
-type SumAggregator[K comparable] struct {
-	store   *shardedStore[K, sumCountAcc]
+type SumAggregator[K comparable, N Number] struct {
+	store   *shardedStore[K, sumCountAcc[N]]
 	flusher *flusher
 	ctx     *ctxCache[K]
 
-	sumMeasure *stats.Float64Measure
+	sumMeasure Measure[N]
 }
 
 // NewSumAggregator builds a SumCountAggregator from cfg, applying defaults
 // and starting the background flusher.
-func NewSumAggregator[K comparable](cfg SumConfig[K]) *SumAggregator[K] {
+func NewSumAggregator[K comparable, N Number](cfg SumConfig[K, N]) *SumAggregator[K, N] {
 	cfg.applyDefaults()
-	a := &SumAggregator[K]{
-		store:      newStore[K, sumCountAcc](cfg.Shards, cfg.Schema),
+	a := &SumAggregator[K, N]{
+		store:      newStore[K, sumCountAcc[N]](cfg.Shards, cfg.Schema),
 		ctx:        newCtxCache[K](cfg.Schema),
 		sumMeasure: cfg.SumMeasure,
 	}
@@ -39,20 +39,20 @@ func NewSumAggregator[K comparable](cfg SumConfig[K]) *SumAggregator[K] {
 }
 
 // Add adds value to the running sum for k.
-func (a *SumAggregator[K]) Add(k K, value float64) {
+func (a *SumAggregator[K, N]) Add(k K, value N) {
 	sh := a.store.shardFor(k)
 	sh.mu.Lock()
 	acc := sh.m[k]
 	if acc == nil {
-		acc = &sumCountAcc{}
+		acc = &sumCountAcc[N]{}
 		sh.m[k] = acc
 	}
 	acc.sum += value
 	sh.mu.Unlock()
 }
 
-func (a *SumAggregator[K]) flush() {
-	a.store.drainEach(func(k K, acc *sumCountAcc) {
+func (a *SumAggregator[K, N]) flush() {
+	a.store.drainEach(func(k K, acc *sumCountAcc[N]) {
 		ctx, err := a.ctx.contextFor(k)
 		if err != nil {
 			return
@@ -64,4 +64,4 @@ func (a *SumAggregator[K]) flush() {
 }
 
 // Stop halts the background flusher.
-func (a *SumAggregator[K]) Stop() { a.flusher.stop() }
+func (a *SumAggregator[K, N]) Stop() { a.flusher.stop() }

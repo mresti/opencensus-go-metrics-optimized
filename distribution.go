@@ -8,37 +8,37 @@ import (
 
 // DistributionConfig configures a DistributionAggregator with the shared Config,
 // the measure to record samples against and the optional per-key sample cap.
-type DistributionConfig[K comparable] struct {
+type DistributionConfig[K comparable, N Number] struct {
 	Config[K]
-	Measure          *stats.Float64Measure
+	Measure          Measure[N]
 	MaxSamplesPerKey int // 0 = exact; >0 = reservoir sampling (bounded memory)
 }
 
 const recordChunk = 128
 
-type distAcc struct {
-	samples []float64
+type distAcc[N Number] struct {
+	samples []N
 	seen    int64
 }
 
 // DistributionAggregator collects per-key samples across sharded stores and
 // flushes them to OpenCensus on the configured interval. When MaxSamplesPerKey is
 // set it keeps a bounded reservoir sample per key.
-type DistributionAggregator[K comparable] struct {
-	store   *shardedStore[K, distAcc]
+type DistributionAggregator[K comparable, N Number] struct {
+	store   *shardedStore[K, distAcc[N]]
 	flusher *flusher
 	ctx     *ctxCache[K]
 
-	measure    *stats.Float64Measure
+	measure    Measure[N]
 	maxSamples int
 }
 
 // NewDistributionAggregator builds a DistributionAggregator from cfg, applying
 // defaults and starting the background flusher.
-func NewDistributionAggregator[K comparable](cfg DistributionConfig[K]) *DistributionAggregator[K] {
+func NewDistributionAggregator[K comparable, N Number](cfg DistributionConfig[K, N]) *DistributionAggregator[K, N] {
 	cfg.applyDefaults()
-	a := &DistributionAggregator[K]{
-		store:      newStore[K, distAcc](cfg.Shards, cfg.Schema),
+	a := &DistributionAggregator[K, N]{
+		store:      newStore[K, distAcc[N]](cfg.Shards, cfg.Schema),
 		ctx:        newCtxCache[K](cfg.Schema),
 		measure:    cfg.Measure,
 		maxSamples: cfg.MaxSamplesPerKey,
@@ -49,12 +49,12 @@ func NewDistributionAggregator[K comparable](cfg DistributionConfig[K]) *Distrib
 
 // Add records value as a sample for k, using reservoir sampling once the per-key
 // sample cap is reached.
-func (a *DistributionAggregator[K]) Add(k K, value float64) {
+func (a *DistributionAggregator[K, N]) Add(k K, value N) {
 	sh := a.store.shardFor(k)
 	sh.mu.Lock()
 	acc := sh.m[k]
 	if acc == nil {
-		acc = &distAcc{}
+		acc = &distAcc[N]{}
 		sh.m[k] = acc
 	}
 	acc.seen++
@@ -70,8 +70,8 @@ func (a *DistributionAggregator[K]) Add(k K, value float64) {
 	sh.mu.Unlock()
 }
 
-func (a *DistributionAggregator[K]) flush() {
-	a.store.drainEach(func(k K, acc *distAcc) {
+func (a *DistributionAggregator[K, N]) flush() {
+	a.store.drainEach(func(k K, acc *distAcc[N]) {
 		if len(acc.samples) == 0 {
 			return
 		}
@@ -96,4 +96,4 @@ func (a *DistributionAggregator[K]) flush() {
 }
 
 // Stop halts the background flusher.
-func (a *DistributionAggregator[K]) Stop() { a.flusher.stop() }
+func (a *DistributionAggregator[K, N]) Stop() { a.flusher.stop() }

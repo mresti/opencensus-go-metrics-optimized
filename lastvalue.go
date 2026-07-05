@@ -12,32 +12,32 @@ import (
 
 // LastValueConfig configures a LastValueAggregator: it embeds the shared Config
 // and the measure whose view must be of type view.LastValue().
-type LastValueConfig[K comparable] struct {
+type LastValueConfig[K comparable, N Number] struct {
 	Config[K]
 	// Measure must be backed by a view of type view.LastValue().
-	Measure *stats.Float64Measure
+	Measure Measure[N]
 }
 
-type lastValueAcc struct {
-	value float64
+type lastValueAcc[N Number] struct {
+	value N
 }
 
 // LastValueAggregator keeps the last value recorded per key K across sharded
 // stores and flushes it to OpenCensus on the configured interval.
-type LastValueAggregator[K comparable] struct {
-	store   *shardedStore[K, lastValueAcc]
+type LastValueAggregator[K comparable, N Number] struct {
+	store   *shardedStore[K, lastValueAcc[N]]
 	flusher *flusher
 	ctx     *ctxCache[K]
 
-	measure *stats.Float64Measure
+	measure Measure[N]
 }
 
 // NewLastValueAggregator builds a LastValueAggregator from cfg, applying defaults
 // and starting the background flusher.
-func NewLastValueAggregator[K comparable](cfg LastValueConfig[K]) *LastValueAggregator[K] {
+func NewLastValueAggregator[K comparable, N Number](cfg LastValueConfig[K, N]) *LastValueAggregator[K, N] {
 	cfg.applyDefaults()
-	a := &LastValueAggregator[K]{
-		store:   newStore[K, lastValueAcc](cfg.Shards, cfg.Schema),
+	a := &LastValueAggregator[K, N]{
+		store:   newStore[K, lastValueAcc[N]](cfg.Shards, cfg.Schema),
 		ctx:     newCtxCache[K](cfg.Schema),
 		measure: cfg.Measure,
 	}
@@ -47,20 +47,20 @@ func NewLastValueAggregator[K comparable](cfg LastValueConfig[K]) *LastValueAggr
 
 // Add overwrites the value of the key. The shard lock serializes the writes:
 // "last-write-wins" is well defined by the acquisition order.
-func (a *LastValueAggregator[K]) Add(k K, value float64) {
+func (a *LastValueAggregator[K, N]) Add(k K, value N) {
 	sh := a.store.shardFor(k)
 	sh.mu.Lock()
 	acc := sh.m[k]
 	if acc == nil {
-		acc = &lastValueAcc{}
+		acc = &lastValueAcc[N]{}
 		sh.m[k] = acc
 	}
 	acc.value = value
 	sh.mu.Unlock()
 }
 
-func (a *LastValueAggregator[K]) flush() {
-	a.store.drainEach(func(k K, acc *lastValueAcc) {
+func (a *LastValueAggregator[K, N]) flush() {
+	a.store.drainEach(func(k K, acc *lastValueAcc[N]) {
 		ctx, err := a.ctx.contextFor(k)
 		if err != nil {
 			return
@@ -70,4 +70,4 @@ func (a *LastValueAggregator[K]) flush() {
 }
 
 // Stop halts the background flusher.
-func (a *LastValueAggregator[K]) Stop() { a.flusher.stop() }
+func (a *LastValueAggregator[K, N]) Stop() { a.flusher.stop() }

@@ -20,7 +20,10 @@ underlying views.
 - **Generic over your label key.** Define any comparable struct `K` as your label
   set and a `Schema[K]` that knows how to project it onto OpenCensus — no
   `map[string]interface{}` or reflection involved.
-- **Four aggregator variants behind one interface** (`Aggregator[K]`): `Count`,
+- **Generic over the measure value type `N`.** Each config takes a second type
+  parameter `N` (`~int64 | ~float64`), so a variant can be backed by either a
+  `*stats.Float64Measure` or a `*stats.Int64Measure`.
+- **Four aggregator variants behind one interface** (`Aggregator[K, N]`): `Count`,
   `Sum`, `Distribution` (with optional bounded reservoir sampling), and
   `LastValue` (for gauges).
 - **Sharded, lock-striped storage.** Writes only lock the shard for their key, not
@@ -93,7 +96,7 @@ var requestCount = stats.Float64("myapp/requests", "HTTP requests", stats.UnitDi
 func main() {
 	schema := HTTPSchema{ /* register tag.Key's via tag.NewKey */ }
 
-	agg := oc.NewCountAggregator(oc.CountConfig[HTTPLabels]{
+	agg := oc.NewCountAggregator(oc.CountConfig[HTTPLabels, float64]{
 		Config: oc.Config[HTTPLabels]{
 			Shards:   16,               // default 16, rounded up to a power of 2
 			Interval: 20 * time.Second, // default 20s
@@ -114,18 +117,22 @@ func main() {
 All variants implement the same interface:
 
 ```go
-type Aggregator[K comparable] interface {
-	Add(k K, value float64)
+type Aggregator[K comparable, N Number] interface {
+	Add(k K, value N)
 	Stop()
 }
 ```
 
-| Constructor                     | Config                  | Use case                                                        |
-|----------------------------------|-------------------------|-------------------------------------------------------------------|
-| `NewCountAggregator[K]`          | `CountConfig[K]`        | Counting occurrences per key (equivalent to `view.Count()`).       |
-| `NewSumAggregator[K]`            | `SumConfig[K]`          | Summing a numeric value per key (equivalent to `view.Sum()`).      |
-| `NewDistributionAggregator[K]`   | `DistributionConfig[K]` | Latency/size histograms; supports `MaxSamplesPerKey` reservoir sampling to bound memory under high/unbounded cardinality per key. |
-| `NewLastValueAggregator[K]`      | `LastValueConfig[K]`    | Gauges; the measure's view **must** use `view.LastValue()`.        |
+| Constructor                        | Config                     | Use case                                                        |
+|------------------------------------|----------------------------|-------------------------------------------------------------------|
+| `NewCountAggregator[K, N]`         | `CountConfig[K, N]`        | Counting occurrences per key (equivalent to `view.Count()`).       |
+| `NewSumAggregator[K, N]`           | `SumConfig[K, N]`          | Summing a numeric value per key (equivalent to `view.Sum()`).      |
+| `NewDistributionAggregator[K, N]`  | `DistributionConfig[K, N]` | Latency/size histograms; supports `MaxSamplesPerKey` reservoir sampling to bound memory under high/unbounded cardinality per key. |
+| `NewLastValueAggregator[K, N]`     | `LastValueConfig[K, N]`    | Gauges; the measure's view **must** use `view.LastValue()`.        |
+
+The value type `N` is inferred from the config literal, e.g.
+`SumConfig[HTTPLabels, float64]` (Float64 measure) or
+`SumConfig[HTTPLabels, int64]` (Int64 measure).
 
 ## Configuration
 
