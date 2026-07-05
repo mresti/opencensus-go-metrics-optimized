@@ -37,11 +37,17 @@ func (s HTTPSchema) Mutators(k HTTPLabels) []tag.Mutator {
 
 // Compile-time conformance of the three variants with the interface.
 var (
-	_ Schema[HTTPLabels]     = HTTPSchema{}
-	_ Aggregator[HTTPLabels] = (*CountAggregator[HTTPLabels])(nil)
-	_ Aggregator[HTTPLabels] = (*SumAggregator[HTTPLabels])(nil)
-	_ Aggregator[HTTPLabels] = (*DistributionAggregator[HTTPLabels])(nil)
-	_ Aggregator[HTTPLabels] = (*LastValueAggregator[HTTPLabels])(nil)
+	_ Schema[HTTPLabels] = HTTPSchema{}
+
+	_ Aggregator[HTTPLabels, float64] = (*CountAggregator[HTTPLabels, float64])(nil)
+	_ Aggregator[HTTPLabels, float64] = (*SumAggregator[HTTPLabels, float64])(nil)
+	_ Aggregator[HTTPLabels, float64] = (*DistributionAggregator[HTTPLabels, float64])(nil)
+	_ Aggregator[HTTPLabels, float64] = (*LastValueAggregator[HTTPLabels, float64])(nil)
+
+	_ Aggregator[HTTPLabels, int64] = (*CountAggregator[HTTPLabels, int64])(nil)
+	_ Aggregator[HTTPLabels, int64] = (*SumAggregator[HTTPLabels, int64])(nil)
+	_ Aggregator[HTTPLabels, int64] = (*DistributionAggregator[HTTPLabels, int64])(nil)
+	_ Aggregator[HTTPLabels, int64] = (*LastValueAggregator[HTTPLabels, int64])(nil)
 )
 
 // hashStrings computes FNV-1a inline over the string fields, without allocating on

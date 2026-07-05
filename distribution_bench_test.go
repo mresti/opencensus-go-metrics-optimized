@@ -14,7 +14,7 @@ var benchLatency = stats.Float64("bench/latency", "ms", stats.UnitMilliseconds)
 func BenchmarkDistributionAdd(b *testing.B) {
 	setupBenchViews()
 	combos := benchCombos()
-	agg := NewDistributionAggregator(DistributionConfig[HTTPLabels]{
+	agg := NewDistributionAggregator(DistributionConfig[HTTPLabels, float64]{
 		Config:           Config[HTTPLabels]{Shards: 32, Interval: time.Hour, Schema: benchSchema},
 		Measure:          benchLatency,
 		MaxSamplesPerKey: 4096,
@@ -36,7 +36,7 @@ func BenchmarkDistributionFlush(b *testing.B) {
 	combos := benchCombos()
 	const samplesPerCombo = 200
 
-	agg := NewDistributionAggregator(DistributionConfig[HTTPLabels]{
+	agg := NewDistributionAggregator(DistributionConfig[HTTPLabels, float64]{
 		Config:           Config[HTTPLabels]{Shards: 32, Interval: time.Hour, Schema: benchSchema},
 		Measure:          benchLatency,
 		MaxSamplesPerKey: 4096,

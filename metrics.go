@@ -6,7 +6,7 @@
 // emit in bursts every `interval`. The key K is any comparable struct you define;
 // a Schema[K] (Strategy pattern) projects it onto OpenCensus.
 //
-// Three variants behind the SAME Aggregator[K] interface (SumCount and
+// Three variants behind the SAME Aggregator[K, N] interface (SumCount and
 // Distribution here; LastValue in lastvalue.go). The hot path (Add) does not
 // allocate on the heap after a key is seen for the first time; the flush swaps the
 // map to avoid blocking writers and reuses the per-key context via ctxCache.
@@ -17,9 +17,10 @@ import (
 	"time"
 )
 
-// Aggregator is the common interface, generic over the labels key K.
-type Aggregator[K comparable] interface {
-	Add(k K, value float64)
+// Aggregator is the common interface, generic over the labels key K and the
+// measure value type N.
+type Aggregator[K comparable, N Number] interface {
+	Add(k K, value N)
 	Stop()
 }
 
