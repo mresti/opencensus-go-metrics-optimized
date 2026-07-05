@@ -13,7 +13,7 @@ import (
 
 func TestLastValueAggregator_LastWriteWins(t *testing.T) {
 	schema, m, viewName := newHTTPFixture(t, view.LastValue())
-	agg := NewLastValueAggregator(LastValueConfig[HTTPLabels]{
+	agg := NewLastValueAggregator(LastValueConfig[HTTPLabels, float64]{
 		Config:  Config[HTTPLabels]{Shards: 8, Interval: time.Hour, Schema: schema},
 		Measure: m,
 	})
@@ -36,7 +36,7 @@ func TestLastValueAggregator_LastWriteWins(t *testing.T) {
 
 func TestLastValueAggregator_MultipleCombinations(t *testing.T) {
 	schema, m, viewName := newHTTPFixture(t, view.LastValue())
-	agg := NewLastValueAggregator(LastValueConfig[HTTPLabels]{
+	agg := NewLastValueAggregator(LastValueConfig[HTTPLabels, float64]{
 		Config:  Config[HTTPLabels]{Shards: 8, Interval: time.Hour, Schema: schema},
 		Measure: m,
 	})
@@ -58,7 +58,7 @@ func TestLastValueAggregator_MultipleCombinations(t *testing.T) {
 
 func TestLastValueAggregator_DrainsAfterFlush(t *testing.T) {
 	schema, m, _ := newHTTPFixture(t, view.LastValue())
-	agg := NewLastValueAggregator(LastValueConfig[HTTPLabels]{
+	agg := NewLastValueAggregator(LastValueConfig[HTTPLabels, float64]{
 		Config:  Config[HTTPLabels]{Shards: 8, Interval: time.Hour, Schema: schema},
 		Measure: m,
 	})
@@ -77,7 +77,7 @@ func TestLastValueAggregator_DrainsAfterFlush(t *testing.T) {
 
 func TestLastValueAggregator_StopFlushesRemaining(t *testing.T) {
 	schema, m, viewName := newHTTPFixture(t, view.LastValue())
-	agg := NewLastValueAggregator(LastValueConfig[HTTPLabels]{
+	agg := NewLastValueAggregator(LastValueConfig[HTTPLabels, float64]{
 		Config:  Config[HTTPLabels]{Shards: 8, Interval: time.Hour, Schema: schema},
 		Measure: m,
 	})
@@ -96,7 +96,7 @@ func TestLastValueAggregator_StopFlushesRemaining(t *testing.T) {
 
 func TestLastValueAggregator_ConcurrentAdds(t *testing.T) {
 	schema, m, viewName := newHTTPFixture(t, view.LastValue())
-	agg := NewLastValueAggregator(LastValueConfig[HTTPLabels]{
+	agg := NewLastValueAggregator(LastValueConfig[HTTPLabels, float64]{
 		Config:  Config[HTTPLabels]{Shards: 8, Interval: time.Hour, Schema: schema},
 		Measure: m,
 	})
@@ -131,20 +131,14 @@ func TestLastValueAggregator_ConcurrentAdds(t *testing.T) {
 // lastValueFor returns the LastValue of a key, or nil if it is not present.
 func lastValueFor(t *testing.T, viewName string, s HTTPSchema, k HTTPLabels) *float64 {
 	t.Helper()
-	rows, err := view.RetrieveData(viewName)
-	if err != nil {
-		t.Fatalf("view.RetrieveData: %v", err)
+	row := rowFor(t, viewName, s, k)
+	if row == nil {
+		return nil
 	}
-	for _, row := range rows {
-		mm := tagsToMap(row.Tags)
-		if mm[s.KeyUser.Name()] == k.User && mm[s.KeyRoute.Name()] == k.Route && mm[s.KeyStatus.Name()] == k.Status {
-			d, ok := row.Data.(*view.LastValueData)
-			if !ok {
-				t.Fatalf("tipo de dato inesperado: %T", row.Data)
-			}
-			v := d.Value
-			return &v
-		}
+	d, ok := row.Data.(*view.LastValueData)
+	if !ok {
+		t.Fatalf("tipo de dato inesperado: %T", row.Data)
 	}
-	return nil
+	v := d.Value
+	return &v
 }

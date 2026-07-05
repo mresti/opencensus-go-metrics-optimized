@@ -1,9 +1,10 @@
 package opencensus
 
-// Contract test for the Aggregator[K] interface. Walks through the THREE variants
+// Contract test for the Aggregator[K, N] interface. Walks through the FOUR variants
 // and verifies what must behave the SAME in all of them: Add records exactly the
 // observed keys, Stop does a final flush, flush() drains the store, and Add is
 // safe under concurrency (-race). It does not verify value semantics (those differ).
+// The whole suite runs for both value types (float64 and int64) via measureMaker.
 
 import (
 	"sync"
@@ -14,126 +15,147 @@ import (
 	"go.opencensus.io/stats/view"
 )
 
-type variantEnv struct {
-	make           func(interval time.Duration) Aggregator[HTTPLabels]
-	flush          func(Aggregator[HTTPLabels])
-	storeLen       func(Aggregator[HTTPLabels]) int
+type variantEnv[N Number] struct {
+	make           func(interval time.Duration) Aggregator[HTTPLabels, N]
+	flush          func(Aggregator[HTTPLabels, N])
+	storeLen       func(Aggregator[HTTPLabels, N]) int
 	recordedCombos func(t *testing.T) map[HTTPLabels]bool
 }
 
-func setupCountVariant(t *testing.T) variantEnv {
+// measureMaker builds a measure of value type N and returns it both as the typed
+// Measure[N] the aggregator needs and as the stats.Measure the view needs.
+type measureMaker[N Number] func(name string) (Measure[N], stats.Measure)
+
+func float64Measure(name string) (Measure[float64], stats.Measure) {
+	m := stats.Float64(name, "v", stats.UnitDimensionless)
+	return m, m
+}
+
+func int64Measure(name string) (Measure[int64], stats.Measure) {
+	m := stats.Int64(name, "v", stats.UnitDimensionless)
+	return m, m
+}
+
+func setupCountVariant[N Number](t *testing.T, mk measureMaker[N]) variantEnv[N] {
 	p := uniqPrefix()
 	schema := HTTPSchema{
 		KeyUser:   newTagKey(t, p+"_u"),
 		KeyRoute:  newTagKey(t, p+"_r"),
 		KeyStatus: newTagKey(t, p+"_s"),
 	}
-	keys := tagKeys(schema)
-	cntM := stats.Float64(p+"/cnt", "v", stats.UnitDimensionless)
-	cntV := &view.View{Name: p + "/cnt_v", Measure: cntM, TagKeys: keys, Aggregation: view.Sum()}
+	cntM, statsM := mk(p + "/cnt")
+	cntV := &view.View{Name: p + "/cnt_v", Measure: statsM, TagKeys: tagKeys(schema), Aggregation: view.Sum()}
 	mustRegister(t, cntV)
 
-	return variantEnv{
-		make: func(iv time.Duration) Aggregator[HTTPLabels] {
-			return NewCountAggregator(CountConfig[HTTPLabels]{
+	return variantEnv[N]{
+		make: func(iv time.Duration) Aggregator[HTTPLabels, N] {
+			return NewCountAggregator(CountConfig[HTTPLabels, N]{
 				Config:       Config[HTTPLabels]{Shards: 8, Interval: iv, Schema: schema},
 				CountMeasure: cntM,
 			})
 		},
-		flush:          func(a Aggregator[HTTPLabels]) { a.(*CountAggregator[HTTPLabels]).flush() },
-		storeLen:       func(a Aggregator[HTTPLabels]) int { return countStore(a.(*CountAggregator[HTTPLabels]).store) },
+		flush:          func(a Aggregator[HTTPLabels, N]) { a.(*CountAggregator[HTTPLabels, N]).flush() },
+		storeLen:       func(a Aggregator[HTTPLabels, N]) int { return countStore(a.(*CountAggregator[HTTPLabels, N]).store) },
 		recordedCombos: func(t *testing.T) map[HTTPLabels]bool { return combosInView(t, cntV.Name, schema) },
 	}
 }
 
-func setupSumVariant(t *testing.T) variantEnv {
+func setupSumVariant[N Number](t *testing.T, mk measureMaker[N]) variantEnv[N] {
 	p := uniqPrefix()
 	schema := HTTPSchema{
 		KeyUser:   newTagKey(t, p+"_u"),
 		KeyRoute:  newTagKey(t, p+"_r"),
 		KeyStatus: newTagKey(t, p+"_s"),
 	}
-	keys := tagKeys(schema)
-	sumM := stats.Float64(p+"/sum", "v", stats.UnitDimensionless)
-	sumV := &view.View{Name: p + "/sum_v", Measure: sumM, TagKeys: keys, Aggregation: view.Sum()}
+	sumM, statsM := mk(p + "/sum")
+	sumV := &view.View{Name: p + "/sum_v", Measure: statsM, TagKeys: tagKeys(schema), Aggregation: view.Sum()}
 	mustRegister(t, sumV)
 
-	return variantEnv{
-		make: func(iv time.Duration) Aggregator[HTTPLabels] {
-			return NewSumAggregator(SumConfig[HTTPLabels]{
+	return variantEnv[N]{
+		make: func(iv time.Duration) Aggregator[HTTPLabels, N] {
+			return NewSumAggregator(SumConfig[HTTPLabels, N]{
 				Config:     Config[HTTPLabels]{Shards: 8, Interval: iv, Schema: schema},
 				SumMeasure: sumM,
 			})
 		},
-		flush:          func(a Aggregator[HTTPLabels]) { a.(*SumAggregator[HTTPLabels]).flush() },
-		storeLen:       func(a Aggregator[HTTPLabels]) int { return countStore(a.(*SumAggregator[HTTPLabels]).store) },
+		flush:          func(a Aggregator[HTTPLabels, N]) { a.(*SumAggregator[HTTPLabels, N]).flush() },
+		storeLen:       func(a Aggregator[HTTPLabels, N]) int { return countStore(a.(*SumAggregator[HTTPLabels, N]).store) },
 		recordedCombos: func(t *testing.T) map[HTTPLabels]bool { return combosInView(t, sumV.Name, schema) },
 	}
 }
 
-func setupDistributionVariant(t *testing.T) variantEnv {
+func setupDistributionVariant[N Number](t *testing.T, mk measureMaker[N]) variantEnv[N] {
 	p := uniqPrefix()
 	schema := HTTPSchema{
 		KeyUser:   newTagKey(t, p+"_u"),
 		KeyRoute:  newTagKey(t, p+"_r"),
 		KeyStatus: newTagKey(t, p+"_s"),
 	}
-	m := stats.Float64(p+"/lat", "ms", stats.UnitMilliseconds)
+	m, statsM := mk(p + "/lat")
 	v := &view.View{
 		Name:        p + "/dist_v",
-		Measure:     m,
+		Measure:     statsM,
 		TagKeys:     tagKeys(schema),
 		Aggregation: view.Distribution(10, 50, 100),
 	}
 	mustRegister(t, v)
 
-	return variantEnv{
-		make: func(iv time.Duration) Aggregator[HTTPLabels] {
-			return NewDistributionAggregator(DistributionConfig[HTTPLabels]{
+	return variantEnv[N]{
+		make: func(iv time.Duration) Aggregator[HTTPLabels, N] {
+			return NewDistributionAggregator(DistributionConfig[HTTPLabels, N]{
 				Config:           Config[HTTPLabels]{Shards: 8, Interval: iv, Schema: schema},
 				Measure:          m,
 				MaxSamplesPerKey: 0,
 			})
 		},
-		flush:          func(a Aggregator[HTTPLabels]) { a.(*DistributionAggregator[HTTPLabels]).flush() },
-		storeLen:       func(a Aggregator[HTTPLabels]) int { return countStore(a.(*DistributionAggregator[HTTPLabels]).store) },
+		flush: func(a Aggregator[HTTPLabels, N]) { a.(*DistributionAggregator[HTTPLabels, N]).flush() },
+		storeLen: func(a Aggregator[HTTPLabels, N]) int {
+			return countStore(a.(*DistributionAggregator[HTTPLabels, N]).store)
+		},
 		recordedCombos: func(t *testing.T) map[HTTPLabels]bool { return combosInView(t, v.Name, schema) },
 	}
 }
 
-func setupLastValueVariant(t *testing.T) variantEnv {
+func setupLastValueVariant[N Number](t *testing.T, mk measureMaker[N]) variantEnv[N] {
 	p := uniqPrefix()
 	schema := HTTPSchema{
 		KeyUser:   newTagKey(t, p+"_u"),
 		KeyRoute:  newTagKey(t, p+"_r"),
 		KeyStatus: newTagKey(t, p+"_s"),
 	}
-	m := stats.Float64(p+"/gauge", "v", stats.UnitDimensionless)
-	v := &view.View{Name: p + "/lv_v", Measure: m, TagKeys: tagKeys(schema), Aggregation: view.LastValue()}
+	m, statsM := mk(p + "/gauge")
+	v := &view.View{Name: p + "/lv_v", Measure: statsM, TagKeys: tagKeys(schema), Aggregation: view.LastValue()}
 	mustRegister(t, v)
 
-	return variantEnv{
-		make: func(iv time.Duration) Aggregator[HTTPLabels] {
-			return NewLastValueAggregator(LastValueConfig[HTTPLabels]{
+	return variantEnv[N]{
+		make: func(iv time.Duration) Aggregator[HTTPLabels, N] {
+			return NewLastValueAggregator(LastValueConfig[HTTPLabels, N]{
 				Config:  Config[HTTPLabels]{Shards: 8, Interval: iv, Schema: schema},
 				Measure: m,
 			})
 		},
-		flush:          func(a Aggregator[HTTPLabels]) { a.(*LastValueAggregator[HTTPLabels]).flush() },
-		storeLen:       func(a Aggregator[HTTPLabels]) int { return countStore(a.(*LastValueAggregator[HTTPLabels]).store) },
+		flush: func(a Aggregator[HTTPLabels, N]) { a.(*LastValueAggregator[HTTPLabels, N]).flush() },
+		storeLen: func(a Aggregator[HTTPLabels, N]) int {
+			return countStore(a.(*LastValueAggregator[HTTPLabels, N]).store)
+		},
 		recordedCombos: func(t *testing.T) map[HTTPLabels]bool { return combosInView(t, v.Name, schema) },
 	}
 }
 
 func TestAggregatorContract(t *testing.T) {
+	t.Run("float64", func(t *testing.T) { runAggregatorContract(t, float64Measure) })
+	t.Run("int64", func(t *testing.T) { runAggregatorContract(t, int64Measure) })
+}
+
+func runAggregatorContract[N Number](t *testing.T, mk measureMaker[N]) {
 	variants := []struct {
 		name  string
-		setup func(t *testing.T) variantEnv
+		setup func(t *testing.T) variantEnv[N]
 	}{
-		{"Count", setupCountVariant},
-		{"Sum", setupSumVariant},
-		{"Distribution", setupDistributionVariant},
-		{"LastValue", setupLastValueVariant},
+		{"Count", func(t *testing.T) variantEnv[N] { return setupCountVariant(t, mk) }},
+		{"Sum", func(t *testing.T) variantEnv[N] { return setupSumVariant(t, mk) }},
+		{"Distribution", func(t *testing.T) variantEnv[N] { return setupDistributionVariant(t, mk) }},
+		{"LastValue", func(t *testing.T) variantEnv[N] { return setupLastValueVariant(t, mk) }},
 	}
 
 	combos := []HTTPLabels{

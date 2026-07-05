@@ -12,7 +12,7 @@ var benchLatencySum = stats.Float64("bench/latency_sum", "ms", stats.UnitMillise
 func BenchmarkSumAdd(b *testing.B) {
 	setupBenchViews()
 	combos := benchCombos()
-	agg := NewSumAggregator(SumConfig[HTTPLabels]{
+	agg := NewSumAggregator(SumConfig[HTTPLabels, float64]{
 		Config:     Config[HTTPLabels]{Shards: 32, Interval: time.Hour, Schema: benchSchema},
 		SumMeasure: benchLatencySum,
 	})
@@ -31,7 +31,7 @@ func BenchmarkSumAdd(b *testing.B) {
 func BenchmarkSumFlush(b *testing.B) {
 	setupBenchViews()
 	combos := benchCombos()
-	agg := NewSumAggregator(SumConfig[HTTPLabels]{
+	agg := NewSumAggregator(SumConfig[HTTPLabels, float64]{
 		Config:     Config[HTTPLabels]{Shards: 32, Interval: time.Hour, Schema: benchSchema},
 		SumMeasure: benchLatencySum,
 	})

@@ -12,7 +12,7 @@ var benchLatencyCount = stats.Float64("bench/latency_count", "1", stats.UnitDime
 func BenchmarkCountAdd(b *testing.B) {
 	setupBenchViews()
 	combos := benchCombos()
-	agg := NewCountAggregator(CountConfig[HTTPLabels]{
+	agg := NewCountAggregator(CountConfig[HTTPLabels, float64]{
 		Config:       Config[HTTPLabels]{Shards: 32, Interval: time.Hour, Schema: benchSchema},
 		CountMeasure: benchLatencyCount,
 	})
@@ -31,7 +31,7 @@ func BenchmarkCountAdd(b *testing.B) {
 func BenchmarkCountFlush(b *testing.B) {
 	setupBenchViews()
 	combos := benchCombos()
-	agg := NewCountAggregator(CountConfig[HTTPLabels]{
+	agg := NewCountAggregator(CountConfig[HTTPLabels, float64]{
 		Config:       Config[HTTPLabels]{Shards: 32, Interval: time.Hour, Schema: benchSchema},
 		CountMeasure: benchLatencyCount,
 	})
