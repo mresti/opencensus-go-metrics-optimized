@@ -13,6 +13,7 @@
 package opencensus
 
 import (
+	"math/rand/v2"
 	"sync"
 	"time"
 )
@@ -79,9 +80,23 @@ type flusher struct {
 	wg   sync.WaitGroup
 }
 
+// startFlusher runs flush every interval on a background goroutine, plus a final
+// flush on stop. It applies a random startup delay in [0, interval) so aggregators
+// created together don't all flush on the same tick and burst the global
+// OpenCensus worker.
 func startFlusher(interval time.Duration, flush func()) *flusher {
+	return startFlusherJittered(interval, rand.N(interval), flush)
+}
+
+// startFlusherJittered is the seam used by tests: it takes the startup jitter
+// explicitly instead of drawing it randomly.
+func startFlusherJittered(interval, jitter time.Duration, flush func()) *flusher {
 	f := &flusher{done: make(chan struct{})}
 	f.wg.Go(func() {
+		if !f.waitJitter(jitter) {
+			flush()
+			return
+		}
 		t := time.NewTicker(interval)
 		defer t.Stop()
 		for {
@@ -95,6 +110,22 @@ func startFlusher(interval time.Duration, flush func()) *flusher {
 		}
 	})
 	return f
+}
+
+// waitJitter blocks for the startup delay, returning false if stop() was called
+// during the wait so the caller can run the final flush and exit.
+func (f *flusher) waitJitter(jitter time.Duration) bool {
+	if jitter <= 0 {
+		return true
+	}
+	timer := time.NewTimer(jitter)
+	defer timer.Stop()
+	select {
+	case <-timer.C:
+		return true
+	case <-f.done:
+		return false
+	}
 }
 
 func (f *flusher) stop() {
