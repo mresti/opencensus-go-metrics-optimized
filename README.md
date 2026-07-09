@@ -99,7 +99,7 @@ func main() {
 	agg := oc.NewCountAggregator(oc.CountConfig[HTTPLabels, float64]{
 		Config: oc.Config[HTTPLabels]{
 			Shards:   16,               // default 16, rounded up to a power of 2
-			Interval: 20 * time.Second, // default 20s
+			Interval: 10 * time.Second, // default 10s
 			Schema:   schema,
 		},
 		CountMeasure: requestCount,
@@ -141,7 +141,7 @@ The value type `N` is inferred from the config literal, e.g.
 ```go
 type Config[K comparable] struct {
 	Shards   int           // rounded up to a power of 2. Default 16.
-	Interval time.Duration // flush cadence. Default 20s.
+	Interval time.Duration // flush cadence. Default 10s.
 	Schema   Schema[K]     // key -> OpenCensus projection strategy
 }
 ```
@@ -149,7 +149,12 @@ type Config[K comparable] struct {
 - **Shards** trades memory/lock granularity for contention: more shards means
   less contention under concurrent `Add` calls from many goroutines.
 - **Interval** trades staleness for the volume of `stats.Record` traffic sent to
-  the OpenCensus worker.
+  the OpenCensus worker (default 10s). Set it to an exact divisor of the exporter
+  reporting period (`view.SetReportingPeriod`) and at most half of it — e.g. 10s
+  or 15s for a 30s period; 10s also divides the common 60s period. A non-divisor
+  interval causes sawtooth in delta/rate charts. Aggregators apply a random
+  startup delay in `[0, Interval)` so instances created together don't all flush
+  on the same tick and burst the OpenCensus worker.
 
 ## Design notes
 
