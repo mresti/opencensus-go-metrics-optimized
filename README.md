@@ -2,7 +2,6 @@
 
 [![CI](https://github.com/mresti/opencensus-go-metrics-optimized/actions/workflows/ci.yml/badge.svg)](https://github.com/mresti/opencensus-go-metrics-optimized/actions/workflows/ci.yml)
 [![Go Reference](https://pkg.go.dev/badge/github.com/mresti/opencensus-go-metrics-optimized.svg)](https://pkg.go.dev/github.com/mresti/opencensus-go-metrics-optimized)
-[![Go Report Card](https://goreportcard.com/badge/github.com/mresti/opencensus-go-metrics-optimized)](https://goreportcard.com/report/github.com/mresti/opencensus-go-metrics-optimized)
 [![License](https://img.shields.io/badge/license-MIT%2FApache--2.0-blue.svg)](#license)
 
 Generic, sharded pre-aggregation for [OpenCensus](https://opencensus.io) Go metrics.
