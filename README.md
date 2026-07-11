@@ -26,6 +26,9 @@ underlying views.
 - **Four aggregator variants behind one interface** (`Aggregator[K, N]`): `Count`,
   `Sum`, `Distribution` (with optional bounded reservoir sampling), and
   `LastValue` (for gauges).
+- **Multi-metric aggregation.** Fold many `Count`/`Sum`/`LastValue` metrics over the
+  same key into one shared store and a single `stats.Record` per key — see
+  [Multi-metric aggregation](#multi-metric-aggregation).
 - **Sharded, lock-striped storage.** Writes only lock the shard for their key, not
   a single global mutex.
 - **Allocation-free hot path.** After a key has been seen once, `Add` does not
@@ -133,6 +136,77 @@ type Aggregator[K comparable, N Number] interface {
 The value type `N` is inferred from the config literal, e.g.
 `SumConfig[HTTPLabels, float64]` (Float64 measure) or
 `SumConfig[HTTPLabels, int64]` (Int64 measure).
+
+## Multi-metric aggregation
+
+When several metrics share the **same** label key `K`, running one aggregator each
+means N shard lookups, N locks and N `ctxCache` entries per event, plus N
+`stats.Record` calls per key on every flush. `MultiAggregator` folds up to **64**
+`Count`/`Sum`/`LastValue` metrics over the same `K` into a **single** sharded store,
+flusher and `ctxCache`, emitting **one `stats.Record` per key** carrying every
+metric at once.
+
+Declare metrics with a builder; each registration returns a lightweight handle you
+record against:
+
+```go
+b := oc.NewMultiBuilder[HTTPLabels, float64](oc.MultiConfig[HTTPLabels, float64]{
+	Config:    oc.Config[HTTPLabels]{Shards: 16, Interval: 10 * time.Second, Schema: schema},
+	SkipZeros: false, // if true, omit Count/Sum slots still 0 at flush time
+})
+
+requests := b.Count(requestMeasure)     // Count ignores the value: each Add is +1
+bytesOut := b.Sum(bytesMeasure)         // Sum accumulates the value
+inflight := b.LastValue(gaugeMeasure)   // LastValue keeps the last write
+
+agg := b.Build() // applies defaults, starts the flusher
+defer agg.Stop() // final flush on shutdown
+
+k := HTTPLabels{User: "alice", Route: "/orders", Status: "200"}
+requests.Add(k, 1)
+bytesOut.Add(k, 2048)
+inflight.Add(k, 3)
+```
+
+### Semantics
+
+- **Count** ignores the value passed to `Add` and increments by one.
+- **Sum** accumulates the value.
+- **LastValue** overwrites (last-write-wins under the shard lock) and is emitted on
+  flush **only if its slot was written that window** — an untouched gauge is never
+  fabricated as 0, but an explicit `Add(k, 0)` *is* emitted (0 is a legitimate
+  gauge reading).
+- **`SkipZeros`** applies only to `Count`/`Sum`: when true, slots still at 0 at
+  flush time are omitted. It never affects `LastValue`.
+- Handles are values — copy them freely; every copy writes the same slot. Only
+  `MultiAggregator` has `Stop()`; handles are pure write endpoints and do **not**
+  implement `Aggregator[K, N]`.
+- Registering a metric after `Build`, calling `Build` twice, exceeding 64 metrics,
+  or passing a nil measure all **panic** (programming errors, surfaced early).
+
+### Cardinality
+
+The shared `ctxCache` holds one context per distinct key regardless of metric count,
+so memory scales with keys, not keys×metrics — roughly **1/N** the ctxCache
+footprint of N separate aggregators, and **N× fewer** `stats.Record` calls per
+flush. This directly eases the high-cardinality guidance in
+[Configuration](#configuration) about not dropping `Interval` too low.
+
+### Performance
+
+Benchmarks on the target 4-`Count` + 9-`Sum` layout (`-benchmem`), multi vs. the
+equivalent 13 separate aggregators:
+
+| Scenario | Multi | Separate | Notes |
+|---|---|---|---|
+| Single-metric `Add` (one metric per event) | ~47 ns/op, 0 allocs | ~51 ns/op, 0 allocs | Handle adds no measurable overhead. |
+| One event → all 13 metrics | ~446 ns/op, 0 allocs | ~589 ns/op, 0 allocs | Multi ~24% faster (one accumulator slice, better locality). |
+| Flush 1 000 keys × 13 metrics | ~2.7 ms/op | ~6.0 ms/op | Multi ~2.2× faster, ~half the allocs (one record + ctx lookup per key). |
+| Parallel `Add`, 8 cores | ~40 ns/op | ~23 ns/op | **Separate wins**: 13 independent stores spread lock contention across 13×`Shards` mutexes. |
+
+The parallel-write result is the cost of a single shared store. If write contention
+dominates your workload, raise `Shards` on the `MultiConfig` to widen the one store
+(e.g. 64–128) — the flush and locality benefits are unaffected.
 
 ## Configuration
 

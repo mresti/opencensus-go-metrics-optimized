@@ -7,7 +7,9 @@
 // a Schema[K] (Strategy pattern) projects it onto OpenCensus.
 //
 // Three variants behind the SAME Aggregator[K, N] interface (SumCount and
-// Distribution here; LastValue in lastvalue.go). The hot path (Add) does not
+// Distribution here; LastValue in lastvalue.go), plus a multi-metric aggregator
+// (multi.go) that shares one store, flusher and ctxCache across several
+// Count/Sum/LastValue metrics on the same key K. The hot path (Add) does not
 // allocate on the heap after a key is seen for the first time; the flush swaps the
 // map to avoid blocking writers and reuses the per-key context via ctxCache.
 package opencensus
