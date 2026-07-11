@@ -184,6 +184,19 @@ inflight.Add(k, 3)
 - Registering a metric after `Build`, calling `Build` twice, exceeding 64 metrics,
   or passing a nil measure all **panic** (programming errors, surfaced early).
 
+### One multi per schema
+
+Group into a single `MultiAggregator` the metrics that share the same key `K` /
+`Schema`. For metrics whose labels differ — e.g. HTTP request metrics vs. database
+query metrics — use **one `MultiAggregator` per domain**; do not merge schemas.
+`stats.Record` carries a single `context.Context`, so metrics with different tag sets
+can never share a `Record`, and a unified store would only move tag projection onto
+the hot path and risk emitting empty/zero tags into the wrong views. The extra cost
+of a second aggregator is just one goroutine/ticker per schema, while separate stores
+*improve* parallel-write throughput (see [Performance](#performance)) and let each
+flusher keep its own anti-burst startup jitter. See the `ExampleNewMultiBuilder`
+two-schemas example in the [Go reference](https://pkg.go.dev/github.com/mresti/opencensus-go-metrics-optimized).
+
 ### Cardinality
 
 The shared `ctxCache` holds one context per distinct key regardless of metric count,
