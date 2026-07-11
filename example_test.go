@@ -40,9 +40,39 @@ func (s HTTPSchema) Mutators(k HTTPLabels) []tag.Mutator {
 	}
 }
 
+// DatabaseLabels is an example labels key. Any comparable struct works.
+type DatabaseLabels struct {
+	User     string
+	Database string
+	Status   string
+}
+
+// DatabaseSchema implements Schema[DatabaseLabels].
+type DatabaseSchema struct {
+	KeyUser     tag.Key
+	KeyDatabase tag.Key
+	KeyStatus   tag.Key
+}
+
+// Hash computes the shard hash for k from its user, database and status fields.
+func (DatabaseSchema) Hash(k DatabaseLabels) uint64 {
+	return hashStrings(k.User, k.Database, k.Status)
+}
+
+// Mutators returns the tag.Mutator values that upsert the user, database and status
+// labels into an OpenCensus context.
+func (s DatabaseSchema) Mutators(k DatabaseLabels) []tag.Mutator {
+	return []tag.Mutator{
+		tag.Upsert(s.KeyUser, k.User),
+		tag.Upsert(s.KeyDatabase, k.Database),
+		tag.Upsert(s.KeyStatus, k.Status),
+	}
+}
+
 // Compile-time conformance of the three variants with the interface.
 var (
-	_ Schema[HTTPLabels] = HTTPSchema{}
+	_ Schema[HTTPLabels]     = HTTPSchema{}
+	_ Schema[DatabaseLabels] = DatabaseSchema{}
 
 	_ Aggregator[HTTPLabels, float64] = (*CountAggregator[HTTPLabels, float64])(nil)
 	_ Aggregator[HTTPLabels, float64] = (*SumAggregator[HTTPLabels, float64])(nil)
@@ -90,6 +120,59 @@ func ExampleNewMultiBuilder() {
 	requests.Add(k, 1)
 	bytesOut.Add(k, 2048)
 	inflight.Add(k, 3)
+}
+
+// ExampleNewMultiBuilder_twoSchemas runs two MultiAggregators side by side, one per
+// label schema (HTTP and Database). The rule is to group metrics by the key they
+// share: use ONE MultiAggregator per schema, never a single aggregator spanning
+// schemas. stats.Record carries a single context, so metrics with different tag sets
+// can never share a Record; keeping stores separate also spreads write contention
+// and lets each flusher keep its own anti-burst startup jitter.
+func ExampleNewMultiBuilder_twoSchemas() {
+	httpSchema := HTTPSchema{
+		KeyUser:   tag.MustNewKey("user"),
+		KeyRoute:  tag.MustNewKey("route"),
+		KeyStatus: tag.MustNewKey("status"),
+	}
+	dbSchema := DatabaseSchema{
+		KeyUser:     tag.MustNewKey("db_user"),
+		KeyDatabase: tag.MustNewKey("database"),
+		KeyStatus:   tag.MustNewKey("db_status"),
+	}
+
+	// HTTP domain: metrics keyed by HTTPLabels.
+	httpRequests := stats.Float64("myapp/http_requests", "HTTP requests", stats.UnitDimensionless)
+	httpB := NewMultiBuilder[HTTPLabels, float64](MultiConfig[HTTPLabels, float64]{
+		Config: Config[HTTPLabels]{Interval: 10 * time.Second, Schema: httpSchema},
+	})
+	requests := httpB.Count(httpRequests)
+	httpAgg := httpB.Build()
+	defer httpAgg.Stop()
+
+	// Database domain: metrics keyed by DatabaseLabels.
+	dbQueries := stats.Float64("myapp/db_queries", "database queries", stats.UnitDimensionless)
+	dbErrors := stats.Float64("myapp/db_query_errors", "failed queries", stats.UnitDimensionless)
+	dbRows := stats.Float64("myapp/db_rows_read", "rows read", stats.UnitDimensionless)
+	dbConns := stats.Float64("myapp/db_open_conns", "open connections", stats.UnitDimensionless)
+	dbB := NewMultiBuilder[DatabaseLabels, float64](MultiConfig[DatabaseLabels, float64]{
+		Config: Config[DatabaseLabels]{Interval: 10 * time.Second, Schema: dbSchema},
+	})
+	queries := dbB.Count(dbQueries)
+	queryErrors := dbB.Count(dbErrors)
+	rowsRead := dbB.Sum(dbRows)
+	openConns := dbB.LastValue(dbConns)
+	dbAgg := dbB.Build()
+	defer dbAgg.Stop()
+
+	requests.Add(HTTPLabels{User: "alice", Route: "/orders", Status: "200"}, 1)
+
+	ok := DatabaseLabels{User: "alice", Database: "orders", Status: "ok"}
+	queries.Add(ok, 1)   // one query
+	rowsRead.Add(ok, 42) // that read 42 rows
+	openConns.Add(ok, 7) // 7 connections open right now
+
+	// Count ignores the value; call it once per failed query.
+	queryErrors.Add(DatabaseLabels{User: "alice", Database: "orders", Status: "error"}, 1)
 }
 
 // hashStrings computes FNV-1a inline over the string fields, without allocating on
