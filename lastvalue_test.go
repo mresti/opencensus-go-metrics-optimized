@@ -27,10 +27,10 @@ func TestLastValueAggregator_LastWriteWins(t *testing.T) {
 
 	got := lastValueFor(t, viewName, schema, k)
 	if got == nil {
-		t.Fatal("no se registró la combinación")
+		t.Fatal("combination not recorded")
 	}
 	if *got != 42 {
-		t.Errorf("last value = %v; quiero 42", *got)
+		t.Errorf("last value = %v; want 42", *got)
 	}
 }
 
@@ -49,10 +49,10 @@ func TestLastValueAggregator_MultipleCombinations(t *testing.T) {
 	agg.flush()
 
 	if v := lastValueFor(t, viewName, schema, k1); v == nil || *v != 10 {
-		t.Errorf("combinación 1 = %v; quiero 10", v)
+		t.Errorf("combination 1 = %v; want 10", v)
 	}
 	if v := lastValueFor(t, viewName, schema, k2); v == nil || *v != 20 {
-		t.Errorf("combinación 2 = %v; quiero 20", v)
+		t.Errorf("combination 2 = %v; want 20", v)
 	}
 }
 
@@ -67,11 +67,11 @@ func TestLastValueAggregator_DrainsAfterFlush(t *testing.T) {
 	agg.Add(HTTPLabels{User: "u1", Route: "/a", Status: "200"}, 1)
 	agg.Add(HTTPLabels{User: "u2", Route: "/b", Status: "200"}, 2)
 	if n := countStore(agg.store); n != 2 {
-		t.Fatalf("antes del flush: %d; quiero 2", n)
+		t.Fatalf("before flush: %d; want 2", n)
 	}
 	agg.flush()
 	if n := countStore(agg.store); n != 0 {
-		t.Errorf("tras el flush: %d; quiero 0", n)
+		t.Errorf("after flush: %d; want 0", n)
 	}
 }
 
@@ -87,10 +87,10 @@ func TestLastValueAggregator_StopFlushesRemaining(t *testing.T) {
 	agg.Stop() // flush final
 
 	if v := lastValueFor(t, viewName, schema, k); v == nil || *v != 7 {
-		t.Errorf("tras Stop = %v; quiero 7", v)
+		t.Errorf("after Stop = %v; want 7", v)
 	}
 	if n := countStore(agg.store); n != 0 {
-		t.Errorf("tras Stop el store tiene %d; quiero 0", n)
+		t.Errorf("after Stop the store has %d; want 0", n)
 	}
 }
 
@@ -123,7 +123,7 @@ func TestLastValueAggregator_ConcurrentAdds(t *testing.T) {
 
 	for _, k := range keys {
 		if v := lastValueFor(t, viewName, schema, k); v == nil || *v != theValue {
-			t.Errorf("clave %v = %v; quiero %v", k, v, theValue)
+			t.Errorf("key %v = %v; want %v", k, v, theValue)
 		}
 	}
 }
@@ -137,7 +137,7 @@ func lastValueFor(t *testing.T, viewName string, s HTTPSchema, k HTTPLabels) *fl
 	}
 	d, ok := row.Data.(*view.LastValueData)
 	if !ok {
-		t.Fatalf("tipo de dato inesperado: %T", row.Data)
+		t.Fatalf("unexpected data type: %T", row.Data)
 	}
 	v := d.Value
 	return &v

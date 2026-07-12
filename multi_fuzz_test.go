@@ -196,7 +196,7 @@ func FuzzMultiAggregator(f *testing.F) {
 
 		agg.flush() // must never panic regardless of tag validity
 		if n := countStore(agg.store); n != 0 {
-			t.Fatalf("store no vacío tras flush: %d entradas", n)
+			t.Fatalf("store not empty after flush: %d entries", n)
 		}
 	})
 }
@@ -205,7 +205,7 @@ func assertKey(t *testing.T, agg *MultiAggregator[HTTPLabels, float64], model *m
 	t.Helper()
 	acc, ok := peekMultiAcc(agg.store, fuzzMultiKeys[ki])
 	if want := model.keyTouched(ki); want != ok {
-		t.Fatalf("key %d: presencia en store = %v; modelo = %v", ki, ok, want)
+		t.Fatalf("key %d: presence in store = %v; model = %v", ki, ok, want)
 	}
 	if !ok {
 		return
@@ -217,7 +217,7 @@ func assertKey(t *testing.T, agg *MultiAggregator[HTTPLabels, float64], model *m
 
 	got := len(agg.measurementsFor(&acc))
 	if want := model.expectedEmitted(ki); got != want {
-		t.Fatalf("key %d: measurements = %d; quiero %d (skipZeros=%v)", ki, got, want, model.skipZeros)
+		t.Fatalf("key %d: measurements = %d; want %d (skipZeros=%v)", ki, got, want, model.skipZeros)
 	}
 }
 
@@ -225,26 +225,26 @@ func assertSlot(t *testing.T, acc multiAcc[float64], model *multiModel, ki, s in
 	t.Helper()
 	bit := acc.touched&(uint64(1)<<s) != 0
 	if bit != model.touched[ki][s] {
-		t.Fatalf("key %d slot %d: touched = %v; quiero %v", ki, s, bit, model.touched[ki][s])
+		t.Fatalf("key %d slot %d: touched = %v; want %v", ki, s, bit, model.touched[ki][s])
 	}
 
 	got := acc.vals[s]
 	switch fuzzMultiKinds[s] {
 	case kindCount:
 		if got != float64(model.counts[ki][s]) {
-			t.Fatalf("key %d count slot %d = %v; quiero %d", ki, s, got, model.counts[ki][s])
+			t.Fatalf("key %d count slot %d = %v; want %d", ki, s, got, model.counts[ki][s])
 		}
 	case kindSum:
 		if !floatsEqual(got, model.sums[ki][s]) {
-			t.Fatalf("key %d sum slot %d = %v; quiero %v", ki, s, got, model.sums[ki][s])
+			t.Fatalf("key %d sum slot %d = %v; want %v", ki, s, got, model.sums[ki][s])
 		}
 	case kindLastValue:
 		if model.touched[ki][s] {
 			if !floatsEqual(got, model.lasts[ki][s]) {
-				t.Fatalf("key %d lastvalue slot %d = %v; quiero %v", ki, s, got, model.lasts[ki][s])
+				t.Fatalf("key %d lastvalue slot %d = %v; want %v", ki, s, got, model.lasts[ki][s])
 			}
 		} else if got != 0 {
-			t.Fatalf("key %d lastvalue slot %d no tocado = %v; quiero 0", ki, s, got)
+			t.Fatalf("key %d lastvalue slot %d untouched = %v; want 0", ki, s, got)
 		}
 	}
 }

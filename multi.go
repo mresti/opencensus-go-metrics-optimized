@@ -165,7 +165,7 @@ func (b *MultiBuilder[K, N]) Build() *MultiAggregator[K, N] {
 	// only when the pool is empty (cold start or a burst of never-before-seen keys).
 	a.accPool.New = func() any { return &multiAcc[N]{vals: make([]N, a.nMetrics)} }
 	a.store = newStore[K, multiAcc[N]](b.cfg.Shards, b.cfg.Schema)
-	a.ctx = newCtxCache[K](b.cfg.Schema)
+	a.ctx = newCtxCache[K](b.cfg.CtxCacheSize, b.cfg.Schema)
 	a.flusher = startFlusher(b.cfg.Interval, a.flush)
 	return a
 }

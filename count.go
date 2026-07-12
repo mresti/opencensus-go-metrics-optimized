@@ -31,7 +31,7 @@ func NewCountAggregator[K comparable, N Number](cfg CountConfig[K, N]) *CountAgg
 	cfg.applyDefaults()
 	a := &CountAggregator[K, N]{
 		store:        newStore[K, countAcc](cfg.Shards, cfg.Schema),
-		ctx:          newCtxCache[K](cfg.Schema),
+		ctx:          newCtxCache[K](cfg.CtxCacheSize, cfg.Schema),
 		countMeasure: cfg.CountMeasure,
 	}
 	a.flusher = startFlusher(cfg.Interval, a.flush)

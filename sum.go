@@ -31,7 +31,7 @@ func NewSumAggregator[K comparable, N Number](cfg SumConfig[K, N]) *SumAggregato
 	cfg.applyDefaults()
 	a := &SumAggregator[K, N]{
 		store:      newStore[K, sumCountAcc[N]](cfg.Shards, cfg.Schema),
-		ctx:        newCtxCache[K](cfg.Schema),
+		ctx:        newCtxCache[K](cfg.CtxCacheSize, cfg.Schema),
 		sumMeasure: cfg.SumMeasure,
 	}
 	a.flusher = startFlusher(cfg.Interval, a.flush)

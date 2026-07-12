@@ -39,7 +39,7 @@ func NewDistributionAggregator[K comparable, N Number](cfg DistributionConfig[K,
 	cfg.applyDefaults()
 	a := &DistributionAggregator[K, N]{
 		store:      newStore[K, distAcc[N]](cfg.Shards, cfg.Schema),
-		ctx:        newCtxCache[K](cfg.Schema),
+		ctx:        newCtxCache[K](cfg.CtxCacheSize, cfg.Schema),
 		measure:    cfg.Measure,
 		maxSamples: cfg.MaxSamplesPerKey,
 	}

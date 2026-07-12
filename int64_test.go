@@ -25,14 +25,14 @@ func TestSumAggregator_Int64Measure(t *testing.T) {
 
 	row := rowFor(t, viewName, schema, k)
 	if row == nil {
-		t.Fatal("combinación no registrada")
+		t.Fatal("combination not recorded")
 	}
 	d, ok := row.Data.(*view.SumData)
 	if !ok {
-		t.Fatalf("tipo de dato inesperado: %T", row.Data)
+		t.Fatalf("unexpected data type: %T", row.Data)
 	}
 	if d.Value != 7 {
-		t.Errorf("sum = %v; quiero 7", d.Value)
+		t.Errorf("sum = %v; want 7", d.Value)
 	}
 }
 
@@ -52,14 +52,14 @@ func TestCountAggregator_Int64Measure(t *testing.T) {
 
 	row := rowFor(t, viewName, schema, k)
 	if row == nil {
-		t.Fatal("combinación no registrada")
+		t.Fatal("combination not recorded")
 	}
 	d, ok := row.Data.(*view.SumData)
 	if !ok {
-		t.Fatalf("tipo de dato inesperado: %T", row.Data)
+		t.Fatalf("unexpected data type: %T", row.Data)
 	}
 	if d.Value != 3 {
-		t.Errorf("count = %v; quiero 3", d.Value)
+		t.Errorf("count = %v; want 3", d.Value)
 	}
 }
 
@@ -78,10 +78,10 @@ func TestLastValueAggregator_Int64Measure(t *testing.T) {
 
 	got := lastValueFor(t, viewName, schema, k)
 	if got == nil {
-		t.Fatal("combinación no registrada")
+		t.Fatal("combination not recorded")
 	}
 	if *got != 99 {
-		t.Errorf("last value = %v; quiero 99", *got)
+		t.Errorf("last value = %v; want 99", *got)
 	}
 }
 
@@ -102,16 +102,16 @@ func TestDistributionAggregator_Int64Measure(t *testing.T) {
 
 	row := rowFor(t, viewName, schema, k)
 	if row == nil {
-		t.Fatal("combinación no registrada")
+		t.Fatal("combination not recorded")
 	}
 	d, ok := row.Data.(*view.DistributionData)
 	if !ok {
-		t.Fatalf("tipo de dato inesperado: %T", row.Data)
+		t.Fatalf("unexpected data type: %T", row.Data)
 	}
 	if d.Count != 3 {
-		t.Errorf("count = %d; quiero 3", d.Count)
+		t.Errorf("count = %d; want 3", d.Count)
 	}
 	if d.Sum() != 135 {
-		t.Errorf("sum = %v; quiero 135", d.Sum())
+		t.Errorf("sum = %v; want 135", d.Sum())
 	}
 }

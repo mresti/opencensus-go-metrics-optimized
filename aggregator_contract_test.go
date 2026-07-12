@@ -177,11 +177,11 @@ func runAggregatorContract[N Number](t *testing.T, mk measureMaker[N]) {
 				got := env.recordedCombos(t)
 				for _, c := range combos {
 					if !got[c] {
-						t.Errorf("combo %v no registrada tras Stop", c)
+						t.Errorf("combo %v not recorded after Stop", c)
 					}
 				}
 				if len(got) != len(combos) {
-					t.Errorf("registradas %d combos; quiero %d", len(got), len(combos))
+					t.Errorf("recorded %d combos; want %d", len(got), len(combos))
 				}
 			})
 
@@ -194,11 +194,11 @@ func runAggregatorContract[N Number](t *testing.T, mk measureMaker[N]) {
 					agg.Add(c, 5)
 				}
 				if n := env.storeLen(agg); n != len(combos) {
-					t.Fatalf("antes del flush: %d; quiero %d", n, len(combos))
+					t.Fatalf("before flush: %d; want %d", n, len(combos))
 				}
 				env.flush(agg)
 				if n := env.storeLen(agg); n != 0 {
-					t.Errorf("tras el flush: %d; quiero 0", n)
+					t.Errorf("after flush: %d; want 0", n)
 				}
 			})
 
@@ -221,7 +221,7 @@ func runAggregatorContract[N Number](t *testing.T, mk measureMaker[N]) {
 				got := env.recordedCombos(t)
 				for _, c := range combos {
 					if !got[c] {
-						t.Errorf("combo %v ausente tras Adds concurrentes", c)
+						t.Errorf("combo %v missing after concurrent Adds", c)
 					}
 				}
 			})
