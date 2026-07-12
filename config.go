@@ -10,9 +10,10 @@ import (
 // Cardinality is the dimension that drives cost. Flush is O(distinct keys): each
 // flush does one ctxCache lookup plus one stats.Record per key, and every record
 // is funneled to the single global OpenCensus worker goroutine. The ctxCache
-// (see ctxcache.go) grows with the number of distinct keys ever seen and is never
-// evicted, so with unbounded label cardinality you must cap or project keys via
-// Schema. Rough guidance:
+// (see ctxcache.go) is a bounded LRU of at most CtxCacheSize tagged contexts, so its
+// memory is capped even under unbounded label cardinality; keys evicted past that
+// bound simply rebuild their context (tag.New) on the next flush that touches them.
+// Rough guidance:
 //   - ≲1k keys: Interval 5–10s is fine.
 //   - 10k–100k+ keys: prefer Interval 10–15s and set MaxSamplesPerKey on
 //     distributions to bound memory.
@@ -38,7 +39,16 @@ type Config[K comparable] struct {
 	Interval time.Duration
 
 	Schema Schema[K] // key projection strategy
+
+	// CtxCacheSize caps the number of distinct keys whose tagged context.Context
+	// stays resident in the ctxCache LRU. Beyond it the least-recently-used entries
+	// are evicted and rebuilt (tag.New) the next time their key flushes — a CPU-for-RAM
+	// trade-off that bounds cache memory under unbounded label cardinality. Default
+	// 200_000 when <= 0.
+	CtxCacheSize int
 }
+
+const defaultCtxCacheSize = 200_000
 
 func (c *Config[K]) applyDefaults() {
 	if c.Shards <= 0 {
@@ -46,5 +56,8 @@ func (c *Config[K]) applyDefaults() {
 	}
 	if c.Interval <= 0 {
 		c.Interval = 10 * time.Second
+	}
+	if c.CtxCacheSize <= 0 {
+		c.CtxCacheSize = defaultCtxCacheSize
 	}
 }

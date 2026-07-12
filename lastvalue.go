@@ -38,7 +38,7 @@ func NewLastValueAggregator[K comparable, N Number](cfg LastValueConfig[K, N]) *
 	cfg.applyDefaults()
 	a := &LastValueAggregator[K, N]{
 		store:   newStore[K, lastValueAcc[N]](cfg.Shards, cfg.Schema),
-		ctx:     newCtxCache[K](cfg.Schema),
+		ctx:     newCtxCache[K](cfg.CtxCacheSize, cfg.Schema),
 		measure: cfg.Measure,
 	}
 	a.flusher = startFlusher(cfg.Interval, a.flush)

@@ -229,6 +229,32 @@ func BenchmarkSeparatedFlush(b *testing.B) {
 	b.ReportMetric(float64(len(keys)), "keys/flush")
 }
 
+// (c') Full window cycle with the FIRST Add of every key inside the timed region.
+// BenchmarkMultiFlush populates under StopTimer, so the per-key miss (which allocates
+// or, now, recycles an acc) is never measured and the pool win is invisible there.
+// Here each iteration re-adds every key into a freshly drained store — every Add is a
+// window's first, hitting the miss path — then flushes. With acc pooling those misses
+// recycle drained accs instead of allocating acc+vals per key per window, which is the
+// steady-state high-cardinality shape the pool targets. allocs/op divided by
+// benchFlushKeys is the per-key figure to watch.
+func BenchmarkMultiAddFlushWindows(b *testing.B) {
+	setupMultiBenchViews()
+	keys := benchFlushKeySet(benchFlushKeys)
+	agg, handles := newBenchMultiAggregator()
+	defer agg.Stop()
+	b.ReportAllocs()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		for _, k := range keys {
+			for _, h := range handles {
+				h.Add(k, 42.5)
+			}
+		}
+		agg.flush()
+	}
+	b.ReportMetric(float64(len(keys)), "keys/window")
+}
+
 // (d) Write contention: concurrent single-metric Adds through the shared store vs
 // independent stores.
 func BenchmarkMultiAddParallel(b *testing.B) {
