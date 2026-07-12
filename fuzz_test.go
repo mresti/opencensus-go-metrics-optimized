@@ -130,16 +130,16 @@ func FuzzCountAggregator_Add(f *testing.F) {
 		acc, ok := peekCountAcc(agg.store, k)
 		switch {
 		case len(vals) == 0 && ok:
-			t.Fatalf("entrada inesperada en el store sin llamadas a Add")
+			t.Fatalf("unexpected entry in the store with no Add calls")
 		case len(vals) > 0 && !ok:
-			t.Fatalf("falta la entrada en el store tras %d Add", len(vals))
+			t.Fatalf("missing store entry after %d Add", len(vals))
 		case ok && acc.count != int64(len(vals)):
-			t.Fatalf("count = %d; quiero %d", acc.count, len(vals))
+			t.Fatalf("count = %d; want %d", acc.count, len(vals))
 		}
 
-		agg.flush() // no debe paniquear pase lo que pase con los tags
+		agg.flush() // must not panic no matter what happens with the tags
 		if n := countStore(agg.store); n != 0 {
-			t.Fatalf("store no vacío tras flush: %d entradas", n)
+			t.Fatalf("store not empty after flush: %d entries", n)
 		}
 	})
 }
@@ -168,16 +168,16 @@ func FuzzSumAggregator_Add(f *testing.F) {
 		acc, ok := peekSumAcc(agg.store, k)
 		switch {
 		case len(vals) == 0 && ok:
-			t.Fatalf("entrada inesperada en el store sin llamadas a Add")
+			t.Fatalf("unexpected entry in the store with no Add calls")
 		case len(vals) > 0 && !ok:
-			t.Fatalf("falta la entrada en el store tras %d Add", len(vals))
+			t.Fatalf("missing store entry after %d Add", len(vals))
 		case ok && !floatsEqual(acc.sum, want):
-			t.Fatalf("sum = %v; quiero %v", acc.sum, want)
+			t.Fatalf("sum = %v; want %v", acc.sum, want)
 		}
 
 		agg.flush()
 		if n := countStore(agg.store); n != 0 {
-			t.Fatalf("store no vacío tras flush: %d entradas", n)
+			t.Fatalf("store not empty after flush: %d entries", n)
 		}
 	})
 }
@@ -203,16 +203,16 @@ func FuzzLastValueAggregator_Add(f *testing.F) {
 		acc, ok := peekLastValueAcc(agg.store, k)
 		switch {
 		case len(vals) == 0 && ok:
-			t.Fatalf("entrada inesperada en el store sin llamadas a Add")
+			t.Fatalf("unexpected entry in the store with no Add calls")
 		case len(vals) > 0 && !ok:
-			t.Fatalf("falta la entrada en el store tras %d Add", len(vals))
+			t.Fatalf("missing store entry after %d Add", len(vals))
 		case ok && !floatsEqual(acc.value, vals[len(vals)-1]):
-			t.Fatalf("last value = %v; quiero %v", acc.value, vals[len(vals)-1])
+			t.Fatalf("last value = %v; want %v", acc.value, vals[len(vals)-1])
 		}
 
 		agg.flush()
 		if n := countStore(agg.store); n != 0 {
-			t.Fatalf("store no vacío tras flush: %d entradas", n)
+			t.Fatalf("store not empty after flush: %d entries", n)
 		}
 	})
 }
@@ -240,46 +240,46 @@ func FuzzDistributionAggregator_Add(f *testing.F) {
 		acc, ok := peekDistAcc(agg.store, k)
 		if len(vals) == 0 {
 			if ok {
-				t.Fatalf("entrada inesperada en el store sin llamadas a Add")
+				t.Fatalf("unexpected entry in the store with no Add calls")
 			}
 			agg.flush()
 			if n := countStore(agg.store); n != 0 {
-				t.Fatalf("store no vacío tras flush: %d entradas", n)
+				t.Fatalf("store not empty after flush: %d entries", n)
 			}
 			return
 		}
 		if !ok {
-			t.Fatalf("falta la entrada en el store tras %d Add", len(vals))
+			t.Fatalf("missing store entry after %d Add", len(vals))
 		}
 		if acc.seen != int64(len(vals)) {
-			t.Fatalf("seen = %d; quiero %d", acc.seen, len(vals))
+			t.Fatalf("seen = %d; want %d", acc.seen, len(vals))
 		}
 
 		if maxSamples <= 0 {
 			if len(acc.samples) != len(vals) {
-				t.Fatalf("samples = %d; quiero %d (modo exacto)", len(acc.samples), len(vals))
+				t.Fatalf("samples = %d; want %d (exact mode)", len(acc.samples), len(vals))
 			}
 			for i, v := range vals {
 				if !floatsEqual(acc.samples[i], v) {
-					t.Fatalf("samples[%d] = %v; quiero %v", i, acc.samples[i], v)
+					t.Fatalf("samples[%d] = %v; want %v", i, acc.samples[i], v)
 				}
 			}
 		} else {
 			wantLen := min(len(vals), maxSamples)
 			if len(acc.samples) != wantLen {
-				t.Fatalf("samples = %d; quiero %d (reservorio de %d)", len(acc.samples), wantLen, maxSamples)
+				t.Fatalf("samples = %d; want %d (reservoir of %d)", len(acc.samples), wantLen, maxSamples)
 			}
 			counts, nanCount := multisetCount(vals)
 			for _, s := range acc.samples {
 				if math.IsNaN(s) {
 					if nanCount == 0 {
-						t.Fatalf("sample NaN no presente en los valores añadidos")
+						t.Fatalf("sample NaN not present in the added values")
 					}
 					nanCount--
 					continue
 				}
 				if counts[s] == 0 {
-					t.Fatalf("sample %v no presente en los valores añadidos", s)
+					t.Fatalf("sample %v not present in the added values", s)
 				}
 				counts[s]--
 			}
@@ -287,7 +287,7 @@ func FuzzDistributionAggregator_Add(f *testing.F) {
 
 		agg.flush()
 		if n := countStore(agg.store); n != 0 {
-			t.Fatalf("store no vacío tras flush: %d entradas", n)
+			t.Fatalf("store not empty after flush: %d entries", n)
 		}
 	})
 }

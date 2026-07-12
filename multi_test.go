@@ -53,7 +53,7 @@ func sumValueFor(t *testing.T, viewName string, s HTTPSchema, k HTTPLabels) *flo
 	}
 	d, ok := row.Data.(*view.SumData)
 	if !ok {
-		t.Fatalf("tipo de dato inesperado: %T", row.Data)
+		t.Fatalf("unexpected data type: %T", row.Data)
 	}
 	v := d.Value
 	return &v
@@ -114,14 +114,14 @@ func TestMultiAggregator_FourCountsNineSums(t *testing.T) {
 		for _, vn := range countViews {
 			got := sumValueFor(t, vn, schema, k)
 			if got == nil || *got != addsPerKey {
-				t.Errorf("count %s key %v = %v; quiero %v", vn, k, got, addsPerKey)
+				t.Errorf("count %s key %v = %v; want %v", vn, k, got, addsPerKey)
 			}
 		}
 		for j, vn := range sumViews {
 			want := addsPerKey * sumStep[j]
 			got := sumValueFor(t, vn, schema, k)
 			if got == nil || *got != want {
-				t.Errorf("sum %s key %v = %v; quiero %v", vn, k, got, want)
+				t.Errorf("sum %s key %v = %v; want %v", vn, k, got, want)
 			}
 		}
 	}
@@ -143,10 +143,10 @@ func TestMultiAggregator_LastValueUntouchedNotEmitted(t *testing.T) {
 	agg.flush()
 
 	if v := sumValueFor(t, countView, schema, k); v == nil || *v != 1 {
-		t.Errorf("count = %v; quiero 1", v)
+		t.Errorf("count = %v; want 1", v)
 	}
 	if v := lastValueFor(t, gv, schema, k); v != nil {
-		t.Errorf("gauge no tocado emitió %v; quiero nada", *v)
+		t.Errorf("untouched gauge emitted %v; want none", *v)
 	}
 }
 
@@ -164,10 +164,10 @@ func TestMultiAggregator_LastValueExplicitZeroEmitted(t *testing.T) {
 
 	v := lastValueFor(t, gv, schema, k)
 	if v == nil {
-		t.Fatal("gauge=0 explícito no se emitió")
+		t.Fatal("explicit gauge=0 was not emitted")
 	}
 	if *v != 0 {
-		t.Errorf("gauge = %v; quiero 0", *v)
+		t.Errorf("gauge = %v; want 0", *v)
 	}
 }
 
@@ -186,7 +186,7 @@ func TestMultiAggregator_LastValueLastWriteWins(t *testing.T) {
 	agg.flush()
 
 	if v := lastValueFor(t, gv, schema, k); v == nil || *v != 42 {
-		t.Errorf("gauge = %v; quiero 42", v)
+		t.Errorf("gauge = %v; want 42", v)
 	}
 }
 
@@ -213,12 +213,12 @@ func TestMultiAggregator_SkipZeros(t *testing.T) {
 
 	t.Run("true omits zero slots", func(t *testing.T) {
 		if run(t, true) {
-			t.Error("con SkipZeros=true el slot 0 se emitió; quiero omitido")
+			t.Error("with SkipZeros=true the zero slot was emitted; want omitted")
 		}
 	})
 	t.Run("false emits zero slots", func(t *testing.T) {
 		if !run(t, false) {
-			t.Error("con SkipZeros=false el slot 0 no se emitió; quiero emitido")
+			t.Error("with SkipZeros=false the zero slot was not emitted; want emitted")
 		}
 	})
 }
@@ -236,10 +236,10 @@ func TestMultiAggregator_WindowDrainsAndReemitsOnlyNew(t *testing.T) {
 	bytes.Add(k, 10)
 	agg.flush()
 	if n := countStore(agg.store); n != 0 {
-		t.Fatalf("store tras flush = %d; quiero 0", n)
+		t.Fatalf("store after flush = %d; want 0", n)
 	}
 	if v := sumValueFor(t, sv, schema, k); v == nil || *v != 10 {
-		t.Fatalf("ventana 1: sum = %v; quiero 10", v)
+		t.Fatalf("window 1: sum = %v; want 10", v)
 	}
 
 	bytes.Add(k, 5)
@@ -247,7 +247,7 @@ func TestMultiAggregator_WindowDrainsAndReemitsOnlyNew(t *testing.T) {
 	// The view aggregates with Sum(): 15 proves the second flush emitted only the
 	// new 5 (a non-drained store would re-emit 10 and yield 25).
 	if v := sumValueFor(t, sv, schema, k); v == nil || *v != 15 {
-		t.Errorf("ventana 2: sum = %v; quiero 15", v)
+		t.Errorf("window 2: sum = %v; want 15", v)
 	}
 }
 
@@ -266,10 +266,10 @@ func TestMultiAggregator_SkipZerosDrainsKeyWithNoMeasurements(t *testing.T) {
 	agg.flush()
 
 	if n := countStore(agg.store); n != 0 {
-		t.Errorf("store tras flush = %d; quiero 0", n)
+		t.Errorf("store after flush = %d; want 0", n)
 	}
 	if v := sumValueFor(t, sv, schema, k); v != nil {
-		t.Errorf("sum 0 con SkipZeros emitió %v; quiero nada", *v)
+		t.Errorf("sum 0 with SkipZeros emitted %v; want none", *v)
 	}
 }
 
@@ -279,13 +279,13 @@ func TestMultiBuilder_Panics(t *testing.T) {
 	t.Run("register after Build", func(t *testing.T) {
 		b := NewMultiBuilder[HTTPLabels, float64](Config1h(schema))
 		b.Build()
-		mustPanic(t, "register tras Build", func() { b.Count(newFloatMeasure()) })
+		mustPanic(t, "register after Build", func() { b.Count(newFloatMeasure()) })
 	})
 
 	t.Run("double Build", func(t *testing.T) {
 		b := NewMultiBuilder[HTTPLabels, float64](Config1h(schema))
 		b.Build()
-		mustPanic(t, "doble Build", func() { b.Build() })
+		mustPanic(t, "double Build", func() { b.Build() })
 	})
 
 	t.Run("more than 64 metrics", func(t *testing.T) {
@@ -293,12 +293,12 @@ func TestMultiBuilder_Panics(t *testing.T) {
 		for range maxMultiMetrics {
 			b.Count(newFloatMeasure())
 		}
-		mustPanic(t, "métrica 65", func() { b.Count(newFloatMeasure()) })
+		mustPanic(t, "metric 65", func() { b.Count(newFloatMeasure()) })
 	})
 
 	t.Run("nil Measure", func(t *testing.T) {
 		b := NewMultiBuilder[HTTPLabels, float64](Config1h(schema))
-		mustPanic(t, "Measure nil", func() { b.Sum(nil) })
+		mustPanic(t, "nil Measure", func() { b.Sum(nil) })
 	})
 }
 
@@ -317,7 +317,7 @@ func TestMultiAggregator_SteadyStateAddZeroAllocs(t *testing.T) {
 	bytes.Add(k, 1) // seed the key so every measured Add hits the existing acc
 
 	if got := testing.AllocsPerRun(1000, func() { bytes.Add(k, 1) }); got != 0 {
-		t.Errorf("steady-state Add = %v allocs/op; quiero 0", got)
+		t.Errorf("steady-state Add = %v allocs/op; want 0", got)
 	}
 }
 
@@ -352,7 +352,7 @@ func TestMultiAggregator_PooledFirstAddPerWindowRecyclesAccs(t *testing.T) {
 
 	const maxAllocsPerKey = 1.0 // an unpooled acc alone would be >= 2/key
 	if got := firstAddPerKeyAllocs(keys, bytes); got >= maxAllocsPerKey {
-		t.Errorf("first Add per key in a fresh window = %v allocs; quiero < %v (accs from pool)", got, maxAllocsPerKey)
+		t.Errorf("first Add per key in a fresh window = %v allocs; want < %v (accs from pool)", got, maxAllocsPerKey)
 	}
 }
 
@@ -398,13 +398,13 @@ func TestMultiAggregator_PooledAccNoStaleAfterReuse(t *testing.T) {
 	agg.flush() // records A and recycles A's acc into the pool
 
 	if v := sumValueFor(t, countView, schema, keyA); v == nil || *v != 5 {
-		t.Fatalf("A count = %v; quiero 5", v)
+		t.Fatalf("A count = %v; want 5", v)
 	}
 	if v := sumValueFor(t, sumViewName, schema, keyA); v == nil || *v != 100 {
-		t.Fatalf("A sum = %v; quiero 100", v)
+		t.Fatalf("A sum = %v; want 100", v)
 	}
 	if v := lastValueFor(t, gaugeViewName, schema, keyA); v == nil || *v != 42 {
-		t.Fatalf("A gauge = %v; quiero 42", v)
+		t.Fatalf("A gauge = %v; want 42", v)
 	}
 
 	keyB := HTTPLabels{User: "uB", Route: "/b", Status: "404"}
@@ -412,17 +412,17 @@ func TestMultiAggregator_PooledAccNoStaleAfterReuse(t *testing.T) {
 	agg.flush()
 
 	if v := sumValueFor(t, countView, schema, keyB); v != nil {
-		t.Errorf("B count emitió %v; quiero nada (stale de A filtrado)", *v)
+		t.Errorf("B count emitted %v; want none (A's stale value filtered)", *v)
 	}
 	if v := sumValueFor(t, sumViewName, schema, keyB); v != nil {
-		t.Errorf("B sum emitió %v; quiero nada (stale de A filtrado)", *v)
+		t.Errorf("B sum emitted %v; want none (A's stale value filtered)", *v)
 	}
 	v := lastValueFor(t, gaugeViewName, schema, keyB)
 	if v == nil {
-		t.Fatal("B gauge=0 no se emitió; quiero 0 (touched respetado)")
+		t.Fatal("B gauge=0 was not emitted; want 0 (touched respected)")
 	}
 	if *v != 0 {
-		t.Errorf("B gauge = %v; quiero 0 (stale 42 filtrado)", *v)
+		t.Errorf("B gauge = %v; want 0 (stale 42 filtered)", *v)
 	}
 }
 
@@ -440,7 +440,7 @@ func mustPanic(t *testing.T, what string, fn func()) {
 	t.Helper()
 	defer func() {
 		if recover() == nil {
-			t.Fatalf("se esperaba panic: %s", what)
+			t.Fatalf("expected panic: %s", what)
 		}
 	}()
 	fn()
