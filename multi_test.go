@@ -6,6 +6,7 @@ package opencensus
 // never races the assertions, mirroring the other variant tests.
 
 import (
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -299,6 +300,130 @@ func TestMultiBuilder_Panics(t *testing.T) {
 		b := NewMultiBuilder[HTTPLabels, float64](Config1h(schema))
 		mustPanic(t, "Measure nil", func() { b.Sum(nil) })
 	})
+}
+
+// TestMultiAggregator_SteadyStateAddZeroAllocs locks in the hot-path invariant: once
+// a key's acc exists, folding a value into it is a map read plus a slice write and
+// must not touch the heap.
+func TestMultiAggregator_SteadyStateAddZeroAllocs(t *testing.T) {
+	schema := newSharedSchema(t)
+	b := NewMultiBuilder[HTTPLabels, float64](Config1h(schema))
+	sumM, _ := sumView(t, schema)
+	bytes := b.Sum(sumM)
+	agg := b.Build()
+	defer agg.Stop()
+
+	k := HTTPLabels{User: "u1", Route: "/a", Status: "200"}
+	bytes.Add(k, 1) // seed the key so every measured Add hits the existing acc
+
+	if got := testing.AllocsPerRun(1000, func() { bytes.Add(k, 1) }); got != 0 {
+		t.Errorf("steady-state Add = %v allocs/op; quiero 0", got)
+	}
+}
+
+// TestMultiAggregator_PooledFirstAddPerWindowRecyclesAccs is the reason the pool
+// exists: at high cardinality drainEach swaps the shard map every window, so every
+// active key is a miss again next window and used to re-allocate its acc (struct +
+// vals slice = 2 allocs) on that first Add. With a primed pool those misses recycle
+// drained accs instead, so the acc no longer contributes to the allocation count.
+//
+// It asserts the first Add per key allocates well under 1/key. That threshold cleanly
+// separates the two regimes: an unpooled acc costs a guaranteed >= 2 allocs/key, while
+// pooling leaves only the small, variable map-bucket cost of drainEach's fresh map
+// (an artifact of the map swap, unrelated to acc pooling). Asserting exactly 0 would
+// be flaky because ReadMemStats also counts those incidental map allocations.
+func TestMultiAggregator_PooledFirstAddPerWindowRecyclesAccs(t *testing.T) {
+	schema := newSharedSchema(t)
+	b := NewMultiBuilder[HTTPLabels, float64](Config1h(schema))
+	sumM, _ := sumView(t, schema)
+	bytes := b.Sum(sumM)
+	agg := b.Build()
+	defer agg.Stop()
+
+	keys := benchFlushKeySet(512)
+
+	primeWindow := func() {
+		for _, k := range keys {
+			bytes.Add(k, 1)
+		}
+		agg.flush() // drains every key, recycling all accs into the pool
+	}
+	primeWindow()
+
+	const maxAllocsPerKey = 1.0 // an unpooled acc alone would be >= 2/key
+	if got := firstAddPerKeyAllocs(keys, bytes); got >= maxAllocsPerKey {
+		t.Errorf("first Add per key in a fresh window = %v allocs; quiero < %v (accs from pool)", got, maxAllocsPerKey)
+	}
+}
+
+// firstAddPerKeyAllocs measures the average heap allocations of the first Add of each
+// key in a fresh window. drainEach has already swapped the shard maps, so every Add is
+// a miss that must Get its acc from the pool. It uses ReadMemStats (stop-the-world,
+// exact malloc counts) around the batch so the count is deterministic.
+func firstAddPerKeyAllocs(keys []HTTPLabels, h MultiHandle[HTTPLabels, float64]) float64 {
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	for _, k := range keys {
+		h.Add(k, 1)
+	}
+	runtime.ReadMemStats(&after)
+	return float64(after.Mallocs-before.Mallocs) / float64(len(keys))
+}
+
+// TestMultiAggregator_PooledAccNoStaleAfterReuse proves recycling resets state: key B
+// reuses A's drained acc (the pool holds exactly one), so A's counts, sums and
+// touched bits must not leak into B. B writes only the gauge, explicitly to 0, under
+// SkipZeros=true — the one case where touched semantics and a real zero both matter.
+func TestMultiAggregator_PooledAccNoStaleAfterReuse(t *testing.T) {
+	schema := newSharedSchema(t)
+	cfg := Config1h(schema)
+	cfg.SkipZeros = true
+	b := NewMultiBuilder[HTTPLabels, float64](cfg)
+
+	countM, countView := sumView(t, schema)
+	sumM, sumViewName := sumView(t, schema)
+	gaugeM, gaugeViewName := lastValueView(t, schema)
+	reqs := b.Count(countM)
+	bytesSum := b.Sum(sumM)
+	depth := b.LastValue(gaugeM)
+	agg := b.Build()
+	defer agg.Stop()
+
+	keyA := HTTPLabels{User: "uA", Route: "/a", Status: "200"}
+	for range 5 {
+		reqs.Add(keyA, 1)
+	}
+	bytesSum.Add(keyA, 100)
+	depth.Add(keyA, 42)
+	agg.flush() // records A and recycles A's acc into the pool
+
+	if v := sumValueFor(t, countView, schema, keyA); v == nil || *v != 5 {
+		t.Fatalf("A count = %v; quiero 5", v)
+	}
+	if v := sumValueFor(t, sumViewName, schema, keyA); v == nil || *v != 100 {
+		t.Fatalf("A sum = %v; quiero 100", v)
+	}
+	if v := lastValueFor(t, gaugeViewName, schema, keyA); v == nil || *v != 42 {
+		t.Fatalf("A gauge = %v; quiero 42", v)
+	}
+
+	keyB := HTTPLabels{User: "uB", Route: "/b", Status: "404"}
+	depth.Add(keyB, 0) // only the gauge, explicitly 0; count/sum slots stay untouched
+	agg.flush()
+
+	if v := sumValueFor(t, countView, schema, keyB); v != nil {
+		t.Errorf("B count emitió %v; quiero nada (stale de A filtrado)", *v)
+	}
+	if v := sumValueFor(t, sumViewName, schema, keyB); v != nil {
+		t.Errorf("B sum emitió %v; quiero nada (stale de A filtrado)", *v)
+	}
+	v := lastValueFor(t, gaugeViewName, schema, keyB)
+	if v == nil {
+		t.Fatal("B gauge=0 no se emitió; quiero 0 (touched respetado)")
+	}
+	if *v != 0 {
+		t.Errorf("B gauge = %v; quiero 0 (stale 42 filtrado)", *v)
+	}
 }
 
 func Config1h(schema HTTPSchema) MultiConfig[HTTPLabels, float64] {
