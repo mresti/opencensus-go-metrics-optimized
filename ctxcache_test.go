@@ -38,7 +38,12 @@ func TestConfigAppliesDefaultCtxCacheSize(t *testing.T) {
 		cfg := Config[HTTPLabels]{CtxCacheSize: in}
 		cfg.applyDefaults()
 		if cfg.CtxCacheSize != defaultCtxCacheSize {
-			t.Errorf("CtxCacheSize=%d after applyDefaults(input=%d); want %d", cfg.CtxCacheSize, in, defaultCtxCacheSize)
+			t.Errorf(
+				"CtxCacheSize=%d after applyDefaults(input=%d); want %d",
+				cfg.CtxCacheSize,
+				in,
+				defaultCtxCacheSize,
+			)
 		}
 	}
 
@@ -54,7 +59,7 @@ func TestCtxCacheNeverExceedsCapacity(t *testing.T) {
 	const capacity = 4
 	c := newCtxCache[HTTPLabels](capacity, schema)
 
-	for i := 0; i < 50; i++ {
+	for i := range 50 {
 		mustCtx(t, c, ctxKey(i))
 		if got := c.ll.Len(); got > capacity {
 			t.Fatalf("after %d inserts list len = %d; want <= %d", i+1, got, capacity)
