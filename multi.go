@@ -32,6 +32,8 @@ package opencensus
 // NOT satisfy Aggregator[K, N] (they expose Add but not Stop) by design.
 
 import (
+	"sync"
+
 	"go.opencensus.io/stats"
 )
 
@@ -67,9 +69,16 @@ type multiMetric[N Number] struct {
 }
 
 // multiAcc is the per-key accumulator shared by every metric. vals is indexed by
-// metric id and is allocated once, the first time the key is seen. touched marks
-// which slots were written this window so the flush can tell a real 0 (LastValue
-// gauge set to 0) from an untouched slot.
+// metric id and is sized to nMetrics. touched marks which slots were written this
+// window so the flush can tell a real 0 (LastValue gauge set to 0) from an untouched
+// slot.
+//
+// Accumulators are recycled through MultiAggregator.accPool rather than allocated
+// per key per window: at high cardinality drainEach swaps the shard map every flush,
+// so an active key that reappears in the next window would otherwise re-allocate its
+// acc (and its vals slice) each time — steady GC churn scaling with active keys. The
+// pool turns that into reuse of already-drained accs. See flush for why recycling is
+// race-free.
 type multiAcc[N Number] struct {
 	vals    []N
 	touched uint64
@@ -151,6 +160,10 @@ func (b *MultiBuilder[K, N]) Build() *MultiAggregator[K, N] {
 	a := b.agg
 	a.built = true
 	a.nMetrics = len(a.metrics)
+	// nMetrics is frozen here, so every pooled acc can be sized to it once and
+	// reused across keys without re-checking its length. New accs are minted lazily
+	// only when the pool is empty (cold start or a burst of never-before-seen keys).
+	a.accPool.New = func() any { return &multiAcc[N]{vals: make([]N, a.nMetrics)} }
 	a.store = newStore[K, multiAcc[N]](b.cfg.Shards, b.cfg.Schema)
 	a.ctx = newCtxCache[K](b.cfg.Schema)
 	a.flusher = startFlusher(b.cfg.Interval, a.flush)
@@ -164,6 +177,11 @@ type MultiAggregator[K comparable, N Number] struct {
 	flusher *flusher
 	ctx     *ctxCache[K]
 
+	// accPool recycles *multiAcc[N] freed by flush back into add. Its New closure is
+	// installed in Build once nMetrics is frozen, so a pooled acc's vals is always the
+	// right length and add never has to size it.
+	accPool sync.Pool
+
 	metrics   []multiMetric[N]
 	nMetrics  int
 	skipZeros bool
@@ -175,7 +193,10 @@ func (a *MultiAggregator[K, N]) add(id int, kind metricKind, k K, value N) {
 	sh.mu.Lock()
 	acc := sh.m[k]
 	if acc == nil {
-		acc = &multiAcc[N]{vals: make([]N, a.nMetrics)}
+		// A pooled acc arrives already reset (vals zeroed, touched cleared on Put),
+		// so it can hold a brand-new key with no risk of leaking the previous key's
+		// values. Only when the pool is empty does New allocate a fresh one.
+		acc = a.accPool.Get().(*multiAcc[N])
 		sh.m[k] = acc
 	}
 	switch kind {
@@ -190,8 +211,20 @@ func (a *MultiAggregator[K, N]) add(id int, kind metricKind, k K, value N) {
 	sh.mu.Unlock()
 }
 
+// flush drains every shard and emits one stats.Record per key, then recycles the
+// key's accumulator.
+//
+// Recycling is race-free: drainEach swaps in a fresh shard map before iterating the
+// old one, and writers only ever reach the acc via the shard's current map under its
+// lock. Once the map is swapped no writer can observe this acc again, so it is owned
+// exclusively by flush. measurementsFor copies every value into a fresh Measurement
+// slice and stats.Record does NOT retain the acc (it enqueues that slice, not the
+// acc), so the acc is free to reset and return to the pool the moment we are done
+// with it — done here via defer so all exit paths (empty measurements, contextFor
+// error, normal Record) recycle exactly once.
 func (a *MultiAggregator[K, N]) flush() {
 	a.store.drainEach(func(k K, acc *multiAcc[N]) {
+		defer a.recycle(acc)
 		ms := a.measurementsFor(acc)
 		if len(ms) == 0 {
 			return
@@ -202,6 +235,16 @@ func (a *MultiAggregator[K, N]) flush() {
 		}
 		stats.Record(ctx, ms...)
 	})
+}
+
+// recycle clears a drained accumulator and returns it to the pool. Resetting on the
+// way in (rather than on Get) guarantees a pooled acc is always clean, so add can
+// bind it to a new key without stale values or stale touched bits leaking across
+// keys.
+func (a *MultiAggregator[K, N]) recycle(acc *multiAcc[N]) {
+	clear(acc.vals)
+	acc.touched = 0
+	a.accPool.Put(acc)
 }
 
 // measurementsFor builds a FRESH slice of measurements for one key. A per-key buffer
